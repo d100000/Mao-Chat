@@ -484,7 +484,6 @@ class AuthHandler(CreditsHTTPMixin, BaseHTTPRequestHandler):
         as_of = data.get("as_of")
         tid = data.get("thread_id", "default")
         temporary = data.get('temporary', False)
-        search_enabled = data.get("search") is True
         if not isinstance(question, str) or not question.strip() or len(question) > 4000:
             self._json(400, {"ok": False, "error": "问题不能为空且不能超过4000字"})
             return
@@ -503,7 +502,7 @@ class AuthHandler(CreditsHTTPMixin, BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 self._json(400, {"ok": False, "error": "历史模式截止日期无效"})
                 return
-        network_enabled = search_enabled and mode != "historical"
+        network_enabled = self._search_policy(mode)["available"]
         agent = self.server.agent  # type: ignore[attr-defined]
         store = self.server.issues
         registered = False
@@ -553,8 +552,6 @@ class AuthHandler(CreditsHTTPMixin, BaseHTTPRequestHandler):
             return
         session_id = store.session_id(user['user_id'], tid)
         agent_question = question.strip()
-        if network_enabled:
-            agent_question += "\n\n【界面设置】本轮已开启联网搜索；请在本地证据不足或需要当前网页资料时调用 firecrawl_search，并明确标注网页结果为候选。"
         try:
             self._sse_start(stream_token)
         except OSError:
@@ -569,6 +566,8 @@ class AuthHandler(CreditsHTTPMixin, BaseHTTPRequestHandler):
         used_ids = []
         claim_checks = {}
         first_content_ms = None
+        first_status_ms = None
+        delivery_mode = "buffered_review"
         recorded = False
         failure_reason = 'unknown'
         delivered, user_cancelled, charge_notified = False, False, False
@@ -585,7 +584,10 @@ class AuthHandler(CreditsHTTPMixin, BaseHTTPRequestHandler):
         charge_scope.__enter__()
         try:
             self._sse({'type': 'accepted', 'client_request_id': data.get('client_request_id')})
-            self._sse({"type": "status", "text": "正在理解你的处境" if mode == 'consult' else "正在读取本地史料"})
+            first_status_ms = int((time.monotonic()-started)*1000)
+            self._sse({"type": "status", "stage": "understand" if mode == 'consult' else "local", "text": "正在理解你的处境" if mode == 'consult' else "正在读取本地史料"})
+            if not network_enabled:
+                self._sse({'type': 'status', 'stage': 'scope', 'text': '分析限定在该时期可用的本地资料。' if mode == 'historical' else '本轮使用本地资料；外部搜索暂不可用，近期事实会保留未核实说明。'})
             cache_scope = agent.transient_web_cache() if hasattr(agent, 'transient_web_cache') else nullcontext()
             with cache_scope:
                 stream_iter = agent.stream(agent_question, mode, as_of, history=prompt_history,
@@ -597,7 +599,8 @@ class AuthHandler(CreditsHTTPMixin, BaseHTTPRequestHandler):
                         text = event.get("text", "")
                         if first_content_ms is None and text.strip(): first_content_ms = int((time.monotonic()-started)*1000)
                         answer_parts.append(text)
-                        self._sse({"type": "content", "text": text})
+                        delivery_mode = event.get('delivery_mode', 'buffered_review')
+                        self._sse({"type": "content", "text": text, "sequence": len(answer_parts), "delivery_mode": delivery_mode})
                     elif kind == "tool":
                         full_result = event.get("result")
                         item = {"name": event.get("name"), "result": full_result}
@@ -611,9 +614,10 @@ class AuthHandler(CreditsHTTPMixin, BaseHTTPRequestHandler):
                         claim_checks = event.get('claim_checks', {})
                         self._sse({'type': 'answer_meta', 'used_evidence_ids': used_ids, 'claim_checks': claim_checks})
                     elif kind == "status":
-                        self._sse({"type": "status", "text": str(event.get('text', ''))[:300]})
+                        self._sse({"type": "status", "stage": str(event.get("stage", "review"))[:40], "text": str(event.get('text', ''))[:300]})
                     elif kind == "done":
                         completed, done_steps = True, event.get('steps', 0)
+                        delivery_mode = event.get("delivery_mode", delivery_mode)
                     elif kind == "error":
                         stream_error = str(event.get("error", "生成失败"))[:300]
                         failure_reason = failure_code(stream_error)
@@ -646,7 +650,7 @@ class AuthHandler(CreditsHTTPMixin, BaseHTTPRequestHandler):
                         agent._persist_run(*args, message_saved=True)
                     else:
                         agent._persist_run(*args)
-                    self.server.quality.record_run(user['user_id'], tid, messages[-1].get('turn_id') or uuid.uuid4().hex, 'ok', (time.monotonic()-started)*1000, first_content_ms, audit_metadata(getattr(agent, 'config', None), tools))
+                    self.server.quality.record_run(user['user_id'], tid, messages[-1].get('turn_id') or uuid.uuid4().hex, 'ok', (time.monotonic()-started)*1000, first_content_ms, {**audit_metadata(getattr(agent, 'config', None), tools), 'first_status_ms': first_status_ms, 'delivery_mode': delivery_mode})
                 saved = store.complete_stream(user['user_id'], tid, agent, messages, latest, question.strip(), audit, stream_token=stream_token)
                 recorded = True
             delivered = not temporary or not self._peer_disconnected
@@ -690,7 +694,7 @@ class AuthHandler(CreditsHTTPMixin, BaseHTTPRequestHandler):
                         try:
                             with store.lock:
                                 store.assert_active(user['user_id'], tid, stream_token)
-                                self.server.quality.record_run(user['user_id'], tid, uuid.uuid4().hex, 'error', (time.monotonic()-started)*1000, first_content_ms, audit_metadata(getattr(agent, 'config', None), tools), reason=failure_reason)
+                                self.server.quality.record_run(user['user_id'], tid, uuid.uuid4().hex, 'error', (time.monotonic()-started)*1000, first_content_ms, {**audit_metadata(getattr(agent, 'config', None), tools), 'first_status_ms': first_status_ms, 'delivery_mode': delivery_mode}, reason=failure_reason)
                         except Exception:
                             pass
                 finally:
@@ -722,8 +726,8 @@ class AuthHandler(CreditsHTTPMixin, BaseHTTPRequestHandler):
         path=urlparse(self.path).path
         if self._credits_get(path, parse_qs(urlparse(self.path).query)):
             return
-        if path in {'/assets/security.js', '/assets/credits.js', '/assets/reader.js', '/assets/knowledge-admin.js'}:
-            self._send(200, (WEB_ROOT / path.rsplit('/', 1)[1]).read_bytes(), 'application/javascript; charset=utf-8')
+        if path in {'/assets/security.js', '/assets/credits.js', '/assets/reader.js', '/assets/knowledge-admin.js', '/assets/conversation.js', '/assets/conversation.css'}:
+            self._send(200, (WEB_ROOT / path.rsplit('/', 1)[1]).read_bytes(), 'text/css; charset=utf-8' if path.endswith('.css') else 'application/javascript; charset=utf-8')
             return
         if path == '/':
             self._send_web_file(WEB_ROOT / 'index.html'); return

@@ -51,7 +51,7 @@ class QualityStore:
     def record_run(self, user_id, tid, turn_id, status, elapsed_ms, first_content_ms, metadata, reason=None):
         # Only allow numeric measurements, code/knowledge fingerprints and safe
         # configuration. Provider errors, prompts and answers never enter here.
-        safe = {k:metadata[k] for k in ('pipeline_version','prompt_version','knowledge_version','source_fingerprints','usage','stage_timings_ms','model_settings','runtime_settings') if k in metadata}
+        safe = {k:metadata[k] for k in ('pipeline_version','prompt_version','knowledge_version','source_fingerprints','usage','stage_timings_ms','model_settings','runtime_settings','first_status_ms','delivery_mode') if k in metadata}
         try:
             with self.connect() as conn:
                 conn.execute('INSERT OR REPLACE INTO quality_runs VALUES(?,?,?,?,?,?,?,?,?)',
@@ -78,11 +78,17 @@ class QualityStore:
             values=sorted(values)
             return {'samples':len(values),'p50_ms':values[math.ceil(len(values)*.5)-1] if values else None,'p95_ms':values[math.ceil(len(values)*.95)-1] if values else None}
         completed=[x for x in rows if x['status']=='ok']
+        statuses = []
+        delivery_modes = {}
         input_known=output_known=calls=known_calls=0
         versions=set(); reasons={}
         for row in rows:
             try: meta=json.loads(row['metadata_json'])
             except (TypeError,ValueError): meta={}
+            first = meta.get('first_status_ms')
+            if isinstance(first, int) and 0 <= first: statuses.append(first)
+            delivery = meta.get('delivery_mode')
+            if delivery in {'verified_paragraph', 'buffered_review'}: delivery_modes[delivery] = delivery_modes.get(delivery, 0) + 1
             usage=meta.get('usage',{})
             c=usage.get('calls',0); calls+=c if isinstance(c,int) and not isinstance(c,bool) and 0<=c<=32 else 0
             if usage.get('usage_complete') is True:
@@ -92,6 +98,7 @@ class QualityStore:
             if meta.get('pipeline_version'): versions.add(meta['pipeline_version'])
             if row['reason']: reasons[row['reason']]=reasons.get(row['reason'],0)+1
         return {'window_days':days,'sample_limit':10000,'runs':len(rows),'completed':len(completed),'errors':len(rows)-len(completed),
+                'first_status':percentiles(statuses),'delivery_modes':delivery_modes,
                 'latency':percentiles([x['elapsed_ms'] for x in completed]),
                 'first_helpful_content':percentiles([x['first_content_ms'] for x in completed if x['first_content_ms'] is not None]),
                 'feedback':{k:feedback.get(k,0) for k in sorted(KINDS)},'failure_reasons':reasons,

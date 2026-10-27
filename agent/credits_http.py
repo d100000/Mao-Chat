@@ -168,6 +168,19 @@ class CreditsHTTPMixin:
         return {'ok': True, 'actor': actor, 'user': user, 'security': self._security_public(),
                 'wallet': self.server.points.wallet(actor), 'workspace_topics_count': count}, {'Set-Cookie': lines}
 
+    def _search_policy(self, mode):
+        # Search remains a server capability, independent of legacy UI flags.
+        # Missing pricing or credentials degrades to local answers.
+        from .conversation import SEARCH_POLICY_VERSION
+        available = False
+        if mode != 'historical' and self.server.search_cash_bound:
+            try:
+                available = bool(self.server.agent.firecrawl.config.api_key())
+            except Exception:
+                pass
+        return {'version': SEARCH_POLICY_VERSION, 'available': available,
+                'bound': self.server.search_cash_bound if available else None}
+
     def _generation_digest(self, data, user):
         if set(data) - GEN_FIELDS - CONTROL_FIELDS:
             raise PointsError('请求包含不支持的生成字段')
@@ -211,6 +224,7 @@ class CreditsHTTPMixin:
         from .continuity import CONTEXT_POLICY_VERSION
         values['pipeline_version'] = _VERSIONS['pipeline_version']
         values['context_policy'] = CONTEXT_POLICY_VERSION
+        values['search_policy'] = self._search_policy(mode)
         values['context'] = snapshot
         values['selected_context'] = selected
         values['deployment'] = {'model': config.llm.model, 'gateway': config.llm.base_url,
@@ -249,11 +263,9 @@ class CreditsHTTPMixin:
             wallet = self.server.points.wallet(actor)
         config = self.server.agent.config
         cap = self.server.billing_input_cap
-        search = data.get('search') is True and data.get('mode') != 'historical'
+        search = self._search_policy(data.get('mode', 'consult'))['available']
         extra = '0'
         if search:
-            if not self.server.search_cash_bound:
-                raise PointsError('搜索费用上界尚未配置，请关闭联网搜索后继续', 422, 'search_budget_unconfigured')
             extra = str(Decimal(self.server.search_cash_bound) * config.max_steps)
         quote = self.server.points.quote(actor, digest, provider=config.llm.provider, model=config.llm.model,
                                           gateway=config.llm.base_url, input_tokens=cap,

@@ -463,7 +463,7 @@ class Agent:
         """Return the tools visible to the model for this request.
 
         The web tool is capability-gated here, while ``stream`` also keeps a
-        handler-side guard so a forged tool call cannot bypass the UI switch.
+        handler-side guard so a forged call cannot bypass server capability limits.
         Historical turns never expose network search regardless of the flag.
         """
         tools = [
@@ -501,10 +501,14 @@ class Agent:
         finally:
             _PERSIST_WEB_CACHE.reset(token)
 
-    def _firecrawl_search(self, query, limit=None, network_enabled=True):
+    def _firecrawl_search(self, query, limit=None, network_enabled=True, private_terms=()):
+        from .conversation import minimized_query
+        query = minimized_query(query, private_terms)
+        if query is None:
+            return {"results": [], "untrusted": True, "blocked": True, "notice": "搜索词包含个人信息或过长，请改用不含个人信息的公开主题词；未发送请求。"}
         if not network_enabled:
             return {"query": query, "results": [], "untrusted": True, "blocked": True,
-                    "status": "blocked", "notice": "本轮已关闭联网搜索，未执行网页请求。"}
+                    "status": "blocked", "notice": "本轮搜索能力不可用或受历史时点限制，未执行网页请求。"}
         from .billing_runtime import billed_search
         with billed_search():
             result = self.firecrawl.search(query, limit=limit or self.config.web_limit)
@@ -789,7 +793,7 @@ class Agent:
         tools = [t.schema() for t in visible_tool_objects]
         handlers = {t.name: t.handler for t in [*all_tool_objects, *visible_tool_objects]}
         handlers["firecrawl_search"] = lambda query, limit=None: self._firecrawl_search(
-            query, limit, network_enabled=effective_network)
+            query, limit, network_enabled=effective_network, private_terms=private_query_terms(user_texts))
         if mode == "consult":
             handlers["method_search"] = lambda query, limit=4: self.method_library.search(query=query, limit=limit, original_query=question)
         tool_results: List[Dict[str, Any]] = []
@@ -797,6 +801,7 @@ class Agent:
         reviewing_final = False
         repair_used = False
         rejected_quotes = []
+        resolved_citations = set()
         urgent_mode = False
         format_limits = answer_format_limits(question) if mode == 'consult' else {}
         candidate_seen = False
@@ -811,16 +816,30 @@ class Agent:
             event_handler = getattr(self.knowledge, "trace_event_historical", None)
             handlers["trace_quote"] = (lambda text, limit=8: quote_handler(text, as_of_current, limit)) if quote_handler else handlers["trace_quote"]
             handlers["trace_event"] = (lambda text, limit=8: event_handler(text, as_of_current, limit)) if event_handler else handlers["trace_event"]
+        from .conversation import SEARCH_RULES, TOOL_PROGRESS, complete_paragraph_end, minimized_query, private_query_terms, progress
         messages = self._messages(question, mode, as_of, history)
+        messages[0]["content"] += "\n" + SEARCH_RULES + ("本轮可按需要搜索。" if effective_network else "本轮不可联网；依赖最新事实的判断须保留未核实说明。")
         user_texts = [message['content'] for message in messages
                       if message.get('role') == 'user' and isinstance(message.get('content'), str)]
         for step in range(self.config.max_steps):
-            # Consume SSE directly so the CLI can render answer tokens while
-            # the provider is still generating.  Mock/simple clients may only
-            # implement chat(), in which case we retain a compatibility path.
+            # Draft/tool responses remain private. The existing final review
+            # may publish checked paragraphs while the provider is generating.
+            # Clients exposing only chat() keep the buffered compatibility path.
             content_parts: List[str] = []
+            published = ''
+            pending = ''
+            # Only the existing final review can publish early. Whole-answer
+            # constraints and provenance prefixes require the buffered path.
+            rows = [row for item in tool_results if item.get('name') in {'method_search', 'verify_citations'}
+                    for row in item.get('result', {}).get('results', [])]
+            needs_gap = bool(current_understanding and current_understanding['phase'] in {'analyze', 'review'}
+                             and current_understanding.get('support_mode') != 'professional'
+                             and current_understanding.get('intent') != 'source'
+                             and not any(row.get('record_type') == 'evidence_card' and row.get('reviewed') in (1, True) for row in rows))
+            early = (mode == 'consult' and reviewing_final and not format_limits and not repair_used
+                     and not needs_gap and not any(self._result_has_candidate(x.get('result') or {}) for x in tool_results))
             call_tools = None if reviewing_final or urgent_mode else tools
-            if hasattr(self.client, "stream_chat"):
+            if hasattr(self.client, "stream_chat") and self.config.llm.stream:
                 content_parts, reasoning_parts, tool_deltas, raw = [], [], [], {}
                 for event in self.client.stream_chat(messages, tools=call_tools):
                     if event.get("type") == "reasoning":
@@ -829,6 +848,31 @@ class Agent:
                             yield {"type": "reasoning", "text": event.get("text", ""), "step": step + 1}
                     elif event.get("type") == "content":
                         content_parts.append(event.get("text", ""))
+                        pending += event.get('text', '')
+                        while early and complete_paragraph_end(pending):
+                            end = complete_paragraph_end(pending)
+                            paragraph, rest = pending[:end], pending[end:]
+                            prefix = published + paragraph
+                            missing = sorted(set(self._content_evidence_markers(prefix)) - set(self._evidence_markers(tool_results)) - resolved_citations)
+                            if missing and len(resolved_citations) < 6:
+                                wanted = missing[:6-len(resolved_citations)]
+                                resolved_citations.update(wanted)
+                                result = self.method_library.verify_citations(wanted, limit=len(wanted))
+                                result['_tool_data'] = True
+                                tool_results.append({'name': 'verify_citations', 'result': result})
+                                yield {'type': 'tool', 'name': 'verify_citations', 'result': result, 'step': step + 1}
+                            _, prefix_gate = self._apply_evidence_gate(prefix, tool_results, mode, as_of)
+                            checks = check_answer_claims(prefix, tool_results, mode, as_of, user_texts=user_texts)
+                            if (prefix_gate['modified'] or not checks['passed']
+                                    or (urgent_mode and self._content_evidence_markers(prefix))):
+                                early = False  # Defer this paragraph to the complete-answer gate.
+                                break
+                            if knowledge_revision(self.config.db_path) != library_revision:
+                                yield {'type': 'error', 'error': '资料版本已更新，本轮未完成；已发布段落基于先前版本。'}
+                                return
+                            published, pending = prefix, rest
+                            yield {'type': 'content', 'text': paragraph, 'step': step + 1,
+                                   'delivery_mode': 'verified_paragraph', 'claim_checks': checks}
                     elif event.get("type") == "tool_call_delta":
                         tool_deltas.extend(event.get("tool_calls", []))
                     elif event.get("type") == "raw" and isinstance(event.get("data"), dict):
@@ -843,7 +887,7 @@ class Agent:
                 if reviewing_final or urgent_mode:
                     # A non-compliant provider must not execute a tool or
                     # mutate the already published understanding in review.
-                    yield {"type": "error", "error": "最终复核阶段不允许工具调用，未发布草稿。" if reviewing_final else "现实安全支持阶段不调用资料工具，本轮未发布，请重试。"}
+                    yield {"type": "error", "error": "最终复核阶段不允许工具调用，本轮未完成。" if reviewing_final else "现实安全支持阶段不调用资料工具，本轮未发布，请重试。"}
                     return
                 assistant = {"role": "assistant", "content": response.content or None, "tool_calls": response.tool_calls}
                 messages.append(assistant)
@@ -855,6 +899,9 @@ class Agent:
                     except json.JSONDecodeError:
                         args = {}
                     tool_started = time.monotonic()
+                    if (name in TOOL_PROGRESS and not urgent_mode and (mode != 'consult' or current_understanding is not None or name == 'understand_user')
+                            and (name != 'firecrawl_search' or (effective_network and minimized_query(args.get('query'), private_query_terms(user_texts))))):
+                        yield progress(*TOOL_PROGRESS[name], step=step + 1)
                     if mode == 'consult' and current_understanding is None and name != 'understand_user':
                         result = {'blocked': True, 'results': [], 'notice': '请先调用understand_user明确本轮需要，未执行检索或网页请求。'}
                     elif urgent_mode:
@@ -877,6 +924,10 @@ class Agent:
                         yield {"type": "analysis", "analysis": current_understanding, "step": step + 1}
                     candidate_seen = candidate_seen or result.get("status") == "candidate_page_match"
                     yield {"type": "tool", "name": name, "result": result, "step": step + 1}
+                    if name == 'firecrawl_search':
+                        yield progress('web', '搜索未完成，相关外部事实仍待核实。' if result.get('error') or result.get('blocked') else '已收到网页候选，尚不代表核实完成。', step=step + 1)
+                    elif name != 'understand_user' and name in TOOL_PROGRESS:
+                        yield progress('relate', '本地检索未完成，已保留资料缺口。' if result.get('error') or result.get('blocked') else '资料检索已返回，正在检查适用背景及与你问题的关联。', step=step + 1)
                     messages.append({"role": "tool", "tool_call_id": call.get("id", uuid.uuid4().hex), "name": name, "content": json.dumps(result, ensure_ascii=False)})
                 if current_understanding is not None:
                     messages.append({'role': 'system', 'content': response_contract_message(current_understanding, format_limits)})
@@ -896,9 +947,9 @@ class Agent:
                         yield {"type": "error", "error": "达到调用步数上限，未能完成最终复核，未发布草稿。"}
                         return
                     messages.append({"role": "assistant", "content": response.content})
-                    messages.append({"role": "system", "content": final_review_message(current_understanding, format_limits)})
+                    messages.append({"role": "system", "content": "按完整语义段落表达，段落之间空一行；每段引语与出处放在同一段。说明可借鉴之处、不同条件和可验证的小步，但倾听时不强制分析模板。\n" + final_review_message(current_understanding, format_limits)})
                     reviewing_final = True
-                    yield {"type": "status", "text": "正在核对你的情况、待确认事项与建议…", "step": step + 1}
+                    yield progress("review", "正在整理建议，并逐段核对引语和出处。", step=step + 1)
                     continue
                 if format_violations(response.content, format_limits):
                     if repair_used or step + 1 >= self.config.max_steps:
@@ -915,9 +966,12 @@ class Agent:
                     yield {'type': 'error', 'error': '现实安全支持不使用历史引用，本轮未发布不合适的答复，请重试。'}
                     return
                 unknown = sorted(set(self._content_evidence_markers(response.content)) - set(self._evidence_markers(tool_results)))
+                unknown = [identity for identity in unknown if identity not in resolved_citations][:max(0, 6-len(resolved_citations))]
                 if unknown:
+                    resolved_citations.update(unknown)
                     # Resolve only real IDs in the curated database, once,
-                    # after rewriting. This needs no further model request.
+                    # after rewriting, within the same six-ID budget used by
+                    # paragraph publication. This needs no model request.
                     result = self.method_library.verify_citations(unknown, limit=6)
                     result['_tool_data'] = True
                     tool_results.append({'name': 'verify_citations', 'result': result})
@@ -943,7 +997,7 @@ class Agent:
                 yield {'type': 'error', 'error': '无法把未核引语改写成确定转述，本轮未发布。请保留资料缺口后重试。'}
                 return
             if not claim_checks['passed']:
-                if (not urgent_mode and not repair_used and step + 1 < self.config.max_steps
+                if (not published and not urgent_mode and not repair_used and step + 1 < self.config.max_steps
                         and not any(item.get('status') == 'check_limit_reached' for item in claim_checks['quote_checks'])):
                     # The same single repair budget serves formatting and
                     # quotation quality; never start another tool/review loop.
@@ -956,31 +1010,34 @@ class Agent:
                     reviewing_final = True
                     yield {'type': 'status', 'text': '正在核对引语资格并收紧回答范围…', 'step': step + 1}
                     continue
-                yield {'type': 'error', 'error': '历史直接引语未通过逐字或日期资格核对，本轮未发布。请改为转述或核对出处后重试。'}
+                yield {'type': 'error', 'error': '历史直接引语未通过逐字或日期资格核对，本轮未完成；不合格段落未发布。请核对出处后重试。'}
                 return
             if knowledge_revision(self.config.db_path) != library_revision:
-                yield {'type': 'error', 'error': '资料版本或核验资格已更新，本轮未发布；请重新报价后重试。'}
+                yield {'type': 'error', 'error': '资料版本或核验资格已更新，本轮未完成；已收到的内容基于先前版本，请重新报价后重试。'}
                 return
             gate['knowledge_revision'] = library_revision
             gate['claim_checks'] = claim_checks
+            if published and gate.get('unknown_markers'):
+                yield {'type': 'error', 'error': '后续段落含无法回查的引用，本轮未完成。'}
+                return
             if response.content:
-                # Buffer the complete assistant turn until tool calls are
-                # known. This prevents a candidate result arriving later from
-                # being preceded by an uncaveated first sentence.
-                if gate.get("modified") or len(content_parts) <= 1:
-                    yield {"type": "content", "text": gated, "step": step + 1,
-                           "evidence_gate": gate, "reasoning": "" if reviewing_final else response.reasoning}
-                else:
+                if published and not gated.startswith(published):
+                    yield {'type': 'error', 'error': '后续复核需要调整已发布内容，本轮未完成；请以重新核对后的回答为准。'}
+                    return
+                remaining = gated[len(published):]
+                if remaining and mode != 'consult' and not gate.get('modified') and len(content_parts) > 1:
                     for index, part in enumerate(content_parts):
-                        event = {"type": "content", "text": part, "step": step + 1,
-                                 "reasoning": response.reasoning if index == 0 and not reviewing_final else ""}
-                        if index == 0:
-                            event["evidence_gate"] = gate
-                        yield event
+                        yield {'type': 'content', 'text': part, 'step': step + 1,
+                               'delivery_mode': 'buffered_review', **({'evidence_gate': gate} if index == 0 else {})}
+                elif remaining:
+                    yield {'type': 'content', 'text': remaining, 'step': step + 1,
+                           'evidence_gate': gate, 'reasoning': '',
+                           'delivery_mode': 'verified_paragraph' if published else 'buffered_review'}
             # Non-stream providers may include their entire review reasoning
             # in raw choices; do not expose the private review via done either.
             yield {"type": "answer_meta", "used_evidence_ids": self.used_evidence_ids(gated, tool_results), "claim_checks": claim_checks}
-            yield {"type": "done", "steps": step + 1, "raw": {} if reviewing_final else response.raw}
+            yield {"type": "done", "steps": step + 1, "raw": {} if reviewing_final else response.raw,
+                   "delivery_mode": "verified_paragraph" if published and len(content_parts) > 1 else "buffered_review"}
             return
         yield {"type": "error", "error": "达到工具调用步数上限，未得到最终回答。"}
 

@@ -146,7 +146,7 @@ class SearchWireHTTPAgent(WireHTTPAgent):
 
     def stream(self,question,mode='research',as_of=None,history=None,show_reasoning=False,network_enabled=True):
         if network_enabled:
-            result=self._firecrawl_search(question,limit=1,network_enabled=True)
+            result=self._firecrawl_search('公开政策资料',limit=1,network_enabled=True)
             yield {'type':'tool','name':'firecrawl_search','result':result}
         yield from super().stream(question,mode,as_of,history,show_reasoning,network_enabled)
 
@@ -887,15 +887,15 @@ class CreditsHTTPTests(unittest.TestCase):
         self.assertIn('隔离HTTP测试',result.get('answer',''))
         self.assertEqual(self.server.agent.executions,1)
 
-    def test_search_without_verified_cash_bound_is_rejected_before_provider(self):
+    def test_search_without_verified_cash_bound_degrades_to_local(self):
         self.bootstrap()
         agent=SearchWireHTTPAgent(self.server.agent.config)
         self.server.agent=agent;self.server.migration.agent=agent
         payload,_=self.prove('/api/points/quote',{'question':'需要联网搜索','mode':'research','thread_id':'search-unconfigured',
             'search':True,'client_request_id':uuid.uuid4().hex})
         status,result,_=self.post('/api/points/quote',payload)
-        self.assertEqual(status,422,result)
-        self.assertEqual(result['code'],'search_budget_unconfigured')
+        self.assertEqual(status,200,result)
+        self.assertIn('quote_id',result)
         self.assertEqual(agent.executions,0)
         self.assertEqual(agent.searches,0)
 

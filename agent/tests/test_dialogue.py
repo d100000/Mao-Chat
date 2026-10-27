@@ -250,7 +250,7 @@ class DialogueTests(unittest.TestCase):
         self.assertEqual(''.join(event['text'] for event in events if event['type'] == 'content'), final)
         self.assertEqual([event['analysis'] for event in events if event['type'] == 'analysis'], [understanding(**public)])
         self.assertEqual([event['steps'] for event in events if event['type'] == 'done'], [4])
-        self.assertEqual([event['text'] for event in events if event['type'] == 'status'], ['正在核对你的情况、待确认事项与建议…', '正在按你要求压缩表达…'])
+        self.assertEqual([event['text'] for event in events if event['type'] == 'status'][-2:], ['正在整理建议，并逐段核对引语和出处。', '正在按你要求压缩表达…'])
         self.assertEqual(len(self.client.calls), 4)
         self.assertTrue(all(call['tools'] is None for call in self.client.calls[-2:]))
         self.assertNotIn('格式修复过程', str(events))
@@ -422,7 +422,7 @@ class DialogueTests(unittest.TestCase):
             with self.subTest(rule=rule):
                 self.assertIn(rule, review_instruction)
         self.assertTrue(review_instruction.endswith(json.dumps(analyses[0], ensure_ascii=False)))
-        self.assertEqual([x['text'] for x in events if x['type'] == 'status'], ['正在核对你的情况、待确认事项与建议…'])
+        self.assertEqual([x['stage'] for x in events if x['type'] == 'status'], ['understand','local','relate','review'])
         self.assertEqual([x['steps'] for x in events if x['type'] == 'done'], [3])
 
     def test_streamed_clarification_draft_is_reviewed_and_final_citations_still_gated(self):

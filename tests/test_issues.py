@@ -364,6 +364,7 @@ class IssueHTTPTests(unittest.TestCase):
 
     def test_temporary_web_search_has_no_global_cache_or_transcript_writes(self):
         class Web:
+            config = type('SearchConfig', (), {'api_key': lambda self: 'isolated-search-test'})()
             def search(self,query,limit=None):
                 return {'query':query,'untrusted':True,'results':[{'url':'https://example.test/source','title':'公开候选'}]}
         self.server.agent.firecrawl=Web()

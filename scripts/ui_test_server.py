@@ -46,6 +46,8 @@ def make_test_server(port=8876, state_dir=None):
     os.environ.pop('MAO_ADMIN_USERNAME', None)
     os.environ.pop('MAO_ADMIN_PASSWORD', None)
 
+    import threading
+    review_release = threading.Event()
     requests = []
 
     class SafeConfigStore(AdminConfigStore):
@@ -111,11 +113,22 @@ def make_test_server(port=8876, state_dir=None):
                 listening = '只想' in question or '不要给建议' in question
                 answer = ('【浏览器测试替身】可以先说说，我会先听你讲，暂时不安排下一步。'
                           if listening else '【浏览器测试替身】先核对现有客户的实际问题，再决定下一步。调查方法可参考【VE08】。现代建议：本周记录一个具体问题，并向客户核对；反馈不同就调整。')
-                yield {'type': 'content', 'text': answer}
+                if 'e2e-progress' in question:
+                    yield {'type': 'content', 'text': '先核对实际问题。调查研究【VE08】可以帮助辨别哪些判断仍缺事实。\n\n'}
+                    if tools is None:
+                        if 'e2e-correction' in question: time.sleep(4)
+                        else: review_release.wait(15)
+                    yield {'type': 'content', 'text': '这里的现代应用是记录具体反馈，不是把历史条件直接套到今天。\n\n'}
+                    if tools is None:
+                        if 'e2e-correction' in question: time.sleep(4)
+                        else: review_release.wait(15)
+                    yield {'type': 'content', 'text': '下一步可先确认一个已有问题；反馈不同就调整。'}
+                else:
+                    yield {'type': 'content', 'text': answer}
                 return
             if not any(m.get('role') == 'tool' for m in tail):
                 calls = [{'index': 0, 'id': 'test-local', 'type': 'function', 'function': {'name': 'local_search', 'arguments': '{"query":"实践论","limit":3}'}}]
-                if any(t['function']['name'] == 'firecrawl_search' for t in tools or []):
+                if '联网' in question and any(t['function']['name'] == 'firecrawl_search' for t in tools or []):
                     calls.append({'index': 1, 'id': 'test-web', 'type': 'function', 'function': {'name': 'firecrawl_search', 'arguments': '{"query":"测试网页候选","limit":1}'}})
                 yield {'type': 'tool_call_delta', 'tool_calls': calls}
                 return
@@ -130,6 +143,7 @@ def make_test_server(port=8876, state_dir=None):
                 yield {'type': 'content', 'text': text}
 
     class FakeFirecrawl:
+        config = type('TestSearchConfig', (), {'api_key': lambda self: 'isolated-test-key'})()
         def search(self, query, limit=None):
             return {'query': query, 'untrusted': True, 'results': [{'title': '浏览器测试网页候选', 'url': 'https://example.test/evidence', 'description': '仅用于测试候选标签，不是历史证据。', 'markdown': '这是测试替身的网页内容。', 'untrusted': True}]}
 
@@ -137,11 +151,14 @@ def make_test_server(port=8876, state_dir=None):
         def __init__(self, config):
             super().__init__(config, client=DeterministicClient(config.llm), firecrawl=FakeFirecrawl())
         def stream(self, question, mode='research', as_of=None, history=None, show_reasoning=False, network_enabled=True):
+            if 'e2e-progress' in question: review_release.clear()
             requests.append({'question': question, 'mode': mode, 'as_of': as_of, 'network_enabled': network_enabled, 'history_count': len(history or [])})
             yield from super().stream(question, mode, as_of, history, show_reasoning, network_enabled)
 
     class TestHandler(auth_server.AuthHandler):
         def do_GET(self):
+            if self.path == '/__test/release-review':
+                review_release.set(); self._json(200, {'ok': True}); return
             if self.path == '/__test/status':
                 self._json(200, {'provider': 'deterministic-test-double', 'requests': requests})
                 return

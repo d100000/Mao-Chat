@@ -1,0 +1,85 @@
+{
+  "date": "2026-10-28",
+  "baseline": "c300ebd",
+  "scope": "automatic retrieval, verified review paragraphs, public progress, inline source explanations and corrections",
+  "python": {
+    "command": "python3 -m unittest discover -q",
+    "run": 534,
+    "passed": 534,
+    "failed": 0
+  },
+  "browser": {
+    "passed": 80,
+    "groups": {
+      "product": {
+        "passed": 12,
+        "failed": 0,
+        "page_errors": 0
+      },
+      "plan": {
+        "passed": 7,
+        "failed": 0,
+        "page_errors": 0
+      },
+      "legacy": {
+        "passed": 17,
+        "failed": 0,
+        "page_errors": 0
+      },
+      "credits": {
+        "passed": 13,
+        "failed": 0,
+        "page_errors": 0
+      },
+      "billing_operations": {
+        "passed": 11,
+        "failed": 0,
+        "page_errors": 0
+      },
+      "billing_operations_http": {
+        "passed": 8,
+        "failed": 0,
+        "page_errors": 0
+      },
+      "mrmao": {
+        "passed": 5,
+        "failed": 0,
+        "page_errors": 0
+      },
+      "conversation": {
+        "passed": 7,
+        "failed": 0,
+        "page_errors": 0
+      }
+    }
+  },
+  "checks": [
+    "Python compileall",
+    "Node syntax checks",
+    "git diff --check"
+  ],
+  "environment": "isolated databases and deterministic model/search fixtures; no paid production generation",
+  "preserved_plan_sha256": "1bbd8b089517cc339cbf0f773e85badb1d6e42385d965647b7a0ef7db61786d5",
+  "known_limits": [
+    "private first draft remains buffered",
+    "explicit length constraints and unqualified evidence prefixes retain whole-answer checks",
+    "incomplete stopped text remains on current page; temporary transcript is not persisted",
+    "no real-provider latency or quality improvement claim",
+    "quality correction and effective reply rates require a defined evaluation protocol"
+  ],
+  "release_scan": {
+    "files": 208,
+    "findings": 0
+  },
+  "local_service": {
+    "database_backup": true,
+    "active_generations_before_reload": 0,
+    "checks": {
+      "/app": 200,
+      "/admin": 200,
+      "/assets/conversation.js": 200,
+      "/assets/conversation.css": 200,
+      "/api/security/status": 200
+    }
+  }
+}

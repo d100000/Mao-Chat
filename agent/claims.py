@@ -14,7 +14,7 @@ import unicodedata
 
 
 MARKER = r'【((?:[A-Za-z][A-Za-z0-9_-]*(?::[A-Za-z0-9_-]+)*)|(?:\d{2}_[A-Za-z0-9_-]+:p\d{4,}))[^】]*】'
-QUOTED = re.compile(r'''“([^”\n]{1,800})”|「([^」\n]{1,800})」|『([^』\n]{1,800})』|"([^"\n]{1,800})"|‘([^’\n]{1,800})’|'([^'\n]{1,800})' ''', re.VERBOSE)
+QUOTED = re.compile(r'''“([^”]+)”|「([^」]+)」|『([^』]+)』|"([^"]+)"|‘([^’]+)’|'([^']+)' ''', re.VERBOSE)
 AUTHOR = re.compile(r'(?:毛泽东|毛主席|主席|教员|作者).{0,16}(?:说|写|指出|强调|原话|讲)|《[^》\n]+》.{0,12}(?:说|写道|指出|强调)|(?:原文|原著).{0,10}(?:说|写|指出|强调)|(?:毛泽东|毛主席|主席|教员|作者|原文|原著)\s*[:：]|(?:原话|逐字引语|直接引语|短引|引文)\s*(?:是|为|[:：])')
 HISTORICAL_AUTHOR = re.compile(r'(?:毛泽东|毛主席|主席|教员|作者).{0,16}(?:说|写|指出|强调|原话|讲)|《[^》\n]+》.{0,12}(?:说|写道|指出|强调)|(?:原文|原著).{0,10}(?:说|写|指出|强调)|(?:毛泽东|毛主席|主席|教员|作者|原文|原著)\s*[:：]')
 MODERN = re.compile(r'(?:你(?:刚才)?说|你提到|用户(?:说|原话|自述)|客户|同事|负责人|朋友|家人|我说|可以问|试着问|建议问|例如问|比如问|可以说|现代建议|今天的建议)')
@@ -161,7 +161,7 @@ def check_answer_claims(content, tools, mode='consult', as_of=None, user_texts=(
     for match in QUOTED.finditer(content):
         quote = next(value for value in match.groups() if value is not None)
         prefix = content[max(0, match.start() - 180):match.start()]
-        prefix = re.split(r'[。！？\n]', prefix)[-1]
+        prefix = re.split(r'[。！？\n]', prefix.rstrip())[-1]
         suffix = content[match.end():match.end() + 180]
         suffix_clause = re.split(r'[。！？\n]', suffix)[0]
         surrounding = prefix + suffix_clause
@@ -208,7 +208,11 @@ def check_answer_claims(content, tools, mode='consult', as_of=None, user_texts=(
                                 'status': 'check_limit_reached',
                                 'notice': '历史直接引语超过40条核对上限，未放行此答复，请减少引语后重试。'}
             break
-        quote_checks.append(check_direct_quote(quote, markers, tools, mode, as_of))
+        if len(quote) > 800:
+            quote_checks.append({'text': quote[:800], 'kind': 'direct_quote', 'evidence_ids': markers,
+                                 'status': 'quote_too_long', 'notice': '直接引语超过逐段核对上限，请缩短并提供连续片段。'})
+        else:
+            quote_checks.append(check_direct_quote(quote, markers, tools, mode, as_of))
     return {'passed': all(item['status'] == 'matched_excerpt' for item in quote_checks),
             'claims': claims, 'quote_checks': quote_checks,
             'coverage': '最多列出40处显式引用；可识别历史直接引语超过40条时拒绝放行。未引注主张及转述蕴含未自动验证。',
