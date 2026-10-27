@@ -20,7 +20,7 @@ GUEST_COOKIE = 'jiaoyuan_guest'
 BROWSER_COOKIE = 'jiaoyuan_trial'
 WALLET_COOKIE = 'jiaoyuan_wallet'
 GEN_FIELDS = {'question', 'mode', 'as_of', 'thread_id', 'temporary', 'search',
-              'history', 'memory_thread_ids'}
+              'history', 'memory_thread_ids', 'reading_selection'}
 AUTH_FIELDS = {'username', 'password'}
 CONTROL_FIELDS = {'quote_id', 'client_request_id', 'operation_id', 'security_proof'}
 
@@ -203,6 +203,14 @@ class CreditsHTTPMixin:
                 raise IssueError('对话模式与截止日期已固定，请新建对话', 409)
         values = {key: data[key] for key in sorted(GEN_FIELDS) if key in data}
         config = self.server.agent.config
+        from .knowledge_versions import knowledge_revision
+        from .telemetry import _VERSIONS
+        from .reader import selected_context
+        values['reading_context'] = selected_context(config.db_path, data.get('reading_selection'), mode)
+        values['knowledge_revision'] = knowledge_revision(config.db_path)
+        from .continuity import CONTEXT_POLICY_VERSION
+        values['pipeline_version'] = _VERSIONS['pipeline_version']
+        values['context_policy'] = CONTEXT_POLICY_VERSION
         values['context'] = snapshot
         values['selected_context'] = selected
         values['deployment'] = {'model': config.llm.model, 'gateway': config.llm.base_url,

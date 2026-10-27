@@ -14,6 +14,7 @@ from typing import Any, Dict
 
 from .principles import available_principles, search_principles
 from .cases import build_case
+from .knowledge_versions import content_version
 from .support import SUPPORT_RULES, support_instruction
 
 
@@ -23,11 +24,8 @@ CONSULT_RULES = """你现在是“教员”对话助手：通过持续对话理�
 严格区分用户明确事实与模型推测：不得向用户经历添加未提供的时间、数量、主体、行动顺序或动机，也不把你的解释写成用户已陈述的心理。用户未提供时间和顺序时，只用“此前”“这次反馈”等不具体的指代，不自行补出“上周”“之后又”等时间或先后关系。前轮助手提出的假设只能称为“先前理解”或“此前的假设”，不能写成“用户旧目标”或用户曾经的想法；只有用户明确表达过的目标才能这样回顾。除非用户明确确认已经尝试，不得把助手建议写成用户已采纳或已实施的行动。确需讨论动机等未知因素时，明确标为待核假设并允许用户否定，不用“只决定谁有面子”等断言替别人解释行为。
 人数的计量对象必须保持原样：“一个两人团队”不能改写为“你带两个人”或“你和两名成员”，是否包含用户本人仍未知；建议可说“与相关团队成员核对”，不额外指定两位他人。用户明确的人力、预算、健康与时间限制必须保留，即使先处理信息缺口，也不能反称这些限制“不是眼下的问题”；未知的优先次序只作假设，不能否定已知约束。
 把 long_term_direction（用户明确重视的长期方向）、stage_goal（当前议题的阶段目标）和 turn_request（这次希望怎样帮助）分别记录。goal 只是 stage_goal 的兼容别名。“压成三句话”“先听我说”“这周一个小实验”通常只更新 turn_request，不能覆盖此前阶段目标；只有用户明确改了目标才更新 stage_goal，未知就留空，不从职业、一次情绪或历史人物价值推断用户人生方向。
-先记录 intent：只想说说用 listen，希望梳理用 explore，直接方案用 advice，比较取舍用 compare，反馈结果用 review，查依据用 source，不明确时用 auto。用户只想倾诉或明确不想听办法时用 phase=listen：自然承接原话，允许暂停，不安排作业、不强塞历史或价值说教，proposed_action=null；最多一个温和承接问题，也可以不问。已足够时不为了填满字段重复追问。
-信息不足但用户愿意梳理时用 phase=clarify：先回应眼前困惑，再问至多一个会改变建议的关键问题。用户希望行动时可给低风险、可逆的小尝试；允许暂时不知道目标，也允许不行动。不要一次问完整调查表，不因缺资料而拒绝所有帮助。此时可以不检索，不强塞历史故事或具体名言。
 信息足够时用 phase=analyze；用户反馈尝试结果时用 phase=review。随后必须调用 method_search，用你从问题中提炼的方法词检索，例如“调查研究 反主观主义”“主要矛盾 次要矛盾 条件”“实践 认识 检验”“领导方法 群众 自愿”“批评 非对抗”。用户无需先知道语录篇名。不把该检索词追加进用户原话。method_search 返回核验史料、方法笔记和有范围的 cases；cases的facts只支持列明事件，outcome_evidence为空时不得声称已核实际效果或完整成功案例。historical_conditions与non_analogies限定类比；全文工具仅作补充。
 选择1至2条真正相关的方法，而不是每次罗列全部理论。method_search 的 principles 是研究者的思想解释层，不是本人原话：在问题需要时同时讨论认识方法、价值目标、人的代价与参与关系，保留历史政治和组织条件。价值取舍要说清为什么值得做、为谁做、谁承担成本以及谁应参与；用户可以拒绝某个标准，不能以觉悟、政治认同或历史权威给用户评分，不能要求献身、服从或持续透支。人生责任只能从公开文本有限解释，不补私人心理。
-回答应自然、具体，先说明一个核心判断与必要假设，再交代所选依据和现代应用边界。倾听或澄清默认约80至200字，常规分析约300至600字，复盘约150至350字；这些是默认尺度，用户明确要求的字数和格式优先。默认最多一个承接问题，正文与 next_question 一致。不要机械重复长模板、整份理解笔记和全部来源；需要时由用户要求展开。
 最终回答必须与 understand_user 中的 uncertainties 保持一致。选项内容、关系或后果未知时，只提供比较标准和条件分支，不得预判某几个选项必被排除、某个方向只是体验改善或某方必有否决权。建议中的预期效果只能写成待检验假设，不能写成调查已经得到的结论。输出前核对每个关于用户和他人的陈述：来自哪句用户原话？无出处的陈述删去或明确标为假设；不能用方法论填补这些现实信息。
 建议必须贴着用户已经表达的目标、资源和时间条件。用户希望行动时，尽量先给一个今天或本周能做的可逆实验，说明如何判断有效、什么情况需要调整或停止，并用 proposed_action 记录同一份提议。它只是一份建议，不代表用户已经接受或实施；不写status、完成时间或虚构结果。用户仅说“明白了”不代表已尝试；没有做、做不到、想暂停也都是可讨论的反馈。倾听或不需要行动时 proposed_action=null。比较选项的代价、风险和收益，不凭一句语录武断要求辞职、创业、决裂、冲突升级；不编造用户的预算、家庭、动机、感受或经历。用户要求直接方案时，在标明假设的条件下先给方案，不无休止追问。
 史料与现代建议严格分开：method_notes 是研究者方法概括，不是毛泽东逐字原话；直接引语只用 quote_eligible=true 的返回原文，引用时不改字且仅摘连续片段，用紧邻的单ID引用标明出处；逐字核对失败不能发布该引语。用户原话、现代拟议说法与历史引语应在句内区分。已核摘要只能转述，不能加引号。历史事件仅限返回的已核公开事实；没有匹配事件就直说资料缺口，不拼接同年事件、不补私人心理或对话。返回事件与某条语录的因果/对应关系只有明确 reviewed 关系才可声称。
@@ -37,7 +35,7 @@ CONSULT_RULES = """你现在是“教员”对话助手：通过持续对话理�
 
 
 SOURCE_RESPONSE_RULES = '''intent=source时，直接、简短地回答用户要求核对的出处：给核对结论、实际检索范围与仍缺什么证据，默认约80至180字；用户要求深入或有明确篇幅时按其要求调整。查无可靠出处只能说本次实际范围未见、归属仍待核；不能据此断言从未说过、已经证明是伪造、只是转述或后人加工。检索覆盖必须来自实际工具记录，未核验的术语年代也不能自行补成旁证；页面近似命中不授予逐字资格。不要为了凑依据罗列含相似字词的无关OCR片段、术语史、历史案例或调查研究说教，也不为这次查证安排用户行动计划。只有找到相关且有资格的连续原文时才短引并标明对应ID。'''
-CONSULT_RULES += '\n' + SUPPORT_RULES + '\n' + SOURCE_RESPONSE_RULES
+CONSULT_RULES += '\n' + SUPPORT_RULES + '\n根据当前原话选择 intent 和 phase；已有字段将决定本轮回应要求。用户明确的格式、长度、深度优先；可自然停住，不必每轮追问。'
 
 FINAL_REVIEW_RULES = """这是本轮唯一一次最终答复复核，理解与必要检索已经完成。本次禁止调用任何工具，禁止修改公开 analysis；只返回可以直接展示给用户的修订后完整答复，不展示草稿、审稿过程、核对清单或内部推理。
 上一条 assistant 消息是待校正草稿，不是新的用户陈述或事实来源。用户现实事实只能来自历史和本轮的 user 角色原话；前轮 assistant 的推测、建议与本轮草稿均不算用户事实。以用户最新明确修正为准，前轮助手假设仅能称先前理解，不能变成用户旧目标或用户已经实施的行动。
@@ -50,10 +48,47 @@ FINAL_REVIEW_RULES = """这是本轮唯一一次最终答复复核，理解与�
 
 def final_review_message(analysis: Dict[str, Any], format_limits=None) -> str:
     """Keep the review contract separate from the tentative public summary."""
-    limits = format_limit_instruction(format_limits or {}) + '\n' + support_instruction(analysis.get('support_mode', 'ordinary'))
-    if analysis.get('intent') == 'source':
-        limits += '\n' + SOURCE_RESPONSE_RULES
+    limits = response_contract_message(analysis, format_limits)
     return FINAL_REVIEW_RULES.replace('下方 JSON 仅是', limits + '\n下方 JSON 仅是') + json.dumps(analysis, ensure_ascii=False)
+
+
+RESPONSE_CONTRACT_VERSION = 'scoped-response-v1'
+_RESPONSE_STYLES = {
+    'listen': ('承接用户明确说的具体处境，允许自然停住；不强塞历史解释，不布置任务。', '80至200字'),
+    'clarify': ('先回应已有信息；仅在确实会改变判断时问一个问题，不重复问已答过的内容。', '80至200字'),
+    'advice': ('先给条件清楚的建议，再说关键理由；仅在用户希望行动时提出可撤回的尝试。', '300至600字'),
+    'compare': ('按用户目标比较选项的条件、代价和未知；允许表格或列表，不替用户排序价值。', '300至600字'),
+    'review': ('说明用户新反馈改变了哪些事实与判断；明白了不等于已尝试，没做和暂停也可讨论。', '150至350字'),
+    'source': (SOURCE_RESPONSE_RULES, '80至180字'),
+    'analyze': ('回应具体困惑，先说明核心判断和必要假设；只解释相关的方法及现代类比边界。', '300至600字'),
+}
+
+
+def response_contract(analysis, format_limits=None):
+    """A deterministic delivery contract, never a new classification/LLM stage."""
+    intent, phase = analysis.get('intent', 'auto'), analysis.get('phase', 'clarify')
+    support = analysis.get('support_mode', 'ordinary')
+    if support in {'urgent_safety', 'professional'}:
+        style, text, length = support, support_instruction(support), '按现实支持需要'
+    else:
+        style = ('listen' if intent == 'listen' or phase == 'listen' else
+                 'source' if intent == 'source' else
+                 intent if intent in {'advice', 'compare', 'review'} else
+                 phase if phase in _RESPONSE_STYLES else 'clarify')
+        text, length = _RESPONSE_STYLES[style]
+    return {'version': RESPONSE_CONTRACT_VERSION, 'style': style, 'instruction': text,
+            'default_length': length, 'max_followup_questions': 1,
+            'action_policy': ('none' if style in {'listen', 'source', 'urgent_safety'} else 'only_if_user_wants'),
+            'retrieval_required': (support == 'ordinary' and style not in {'listen', 'source'} and phase in {'analyze', 'review'}),
+            'format_limits': {} if support == 'urgent_safety' else dict(format_limits or {})}
+
+
+def response_contract_message(analysis, format_limits=None):
+    contract = response_contract(analysis, format_limits)
+    return ('【本轮回应要求】以下只约束交付方式，始终遵守用户事实、来源资格和最新纠正。'
+            '默认长度可被用户明确要求覆盖；不为显得亲切而附和未经证实的事实。\n'
+            + json.dumps(contract, ensure_ascii=False) + '\n'
+            + format_limit_instruction(contract['format_limits']))
 
 
 def _number(value):
@@ -295,7 +330,8 @@ class CuratedMethodLibrary:
         if 'evidence_cards' not in tables:
             return set()
         return {row[0] for row in conn.execute(
-            "SELECT evidence_id FROM evidence_cards WHERE reviewed=1 AND COALESCE(source_role,'')!='biographical_record'")}
+            "SELECT evidence_id,raw_json FROM evidence_cards WHERE reviewed=1 AND COALESCE(source_role,'')!='biographical_record'")
+                if not _json(row[1], {}).get('interpretations_disabled')}
 
     @staticmethod
     def _card(card, score=0):
@@ -434,7 +470,7 @@ class CuratedMethodLibrary:
             if conn is not None:
                 conn.close()
 
-    def search(self, query: str, limit=4):
+    def search(self, query: str, limit=4, *, original_query="", enhanced=True):
         if not isinstance(query, str) or not query.strip() or len(query) > 400:
             raise ValueError("方法检索词需为1至400字")
         if isinstance(limit, bool):
@@ -452,11 +488,13 @@ class CuratedMethodLibrary:
             return output
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        terms = _tokens(query)
+        conn.execute("BEGIN")  # One consistent eligibility snapshot per retrieval.
+        original_query = original_query[:4000] if isinstance(original_query, str) else ""
+        terms = _tokens(query) | (_tokens(original_query) if enhanced else set())
         scored = []
         try:
             tables = {x[0] for x in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            output['principles'] = search_principles(query, self._reviewed_author_ids(conn, tables), limit=3)
+            output['principles'] = search_principles(query, self._reviewed_author_ids(conn, tables), limit=3, enhanced=enhanced, original_query=original_query)
             principle_support = {value for note in output['principles'] for value in note['evidence_ids']}
             if "evidence_cards" in tables:
                 for row in conn.execute("SELECT * FROM evidence_cards WHERE reviewed=1"):

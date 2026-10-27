@@ -132,7 +132,9 @@ class ConsultTransportTests(unittest.TestCase):
                 self.assertEqual(status, 200)
             history = requests[-1]['history']
             self.assertFalse(any('第5轮纠正' in x['content'] for x in history if x['role'] == 'user'))
-            self.assertIn(first_goal, history[0]['content'])
+            # Current sourced records now replace optional early context; an old
+            # goal must not be reintroduced as a fresh user statement.
+            self.assertFalse(any(first_goal in x['content'] for x in history if x['role']=='user'))
             self.assertEqual(history[-1]['role'], 'assistant')
             summary=next(x for x in history if x['content'].startswith('【上一轮助手的暂定理解'))
             self.assertEqual(json.loads(summary['content'].rsplit('\n', 1)[1])['goal'], corrected_goal)

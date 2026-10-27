@@ -1,0 +1,126 @@
+{
+  "baseline_commit": "2aaf5d204d7fd5b0a50b28e7573aeb5224f11901",
+  "plan_sha256": "1bbd8b089517cc339cbf0f773e85badb1d6e42385d965647b7a0ef7db61786d5",
+  "knowledge_files": {
+    "data/verified_early.jsonl": "03234ec48085f733089877a3450debec6d54efa7e43ffc3b3dc418ac79e400d6",
+    "data/verified_late.jsonl": "c6d48ad72310544c69842eda6e442f9329400f663bce1033aa7e8241f7c6d019",
+    "data/verified_timeline.jsonl": "ea225b993891cb3502873413c929cf8e431d08f3ae27217e7be7ec095f9c135c",
+    "data/quote_event_links.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "skills/mao-primary-sources/references/verified-evidence.jsonl": "cf203cd170d9ab8d4665e91d09b9dbaa0f92f96d368a3b94d6072fee2d5ada58"
+  },
+  "model": {
+    "gateway": "https://api.bob-api.com/v1",
+    "model": "deepseek-v4.1-flash",
+    "live_calls_in_this_run": 0
+  },
+  "baseline_tests": {
+    "run": 493,
+    "failures": 1,
+    "reason": "existing random CAPTCHA test incorrectly assumed zero was always wrong"
+  },
+  "evaluation": {
+    "inputs": "tests/mrmao_scenarios.json",
+    "flow_tests": "deterministic mock; not naturalness evidence",
+    "blind_review": "not_run",
+    "semantic": "disabled; sentence_transformers unavailable"
+  },
+  "predeclared_gates": {
+    "new_fixed_llm_calls": 0,
+    "hard_boundary_failures": 0,
+    "exact_query_top1_regressions": 0,
+    "lexical_p95_ms_limit": 50,
+    "semantic_activation": "requires improvement over enhanced lexical on independent human labels and no boundary regression"
+  },
+  "context_experiment": {
+    "fixture": "60 alternating 6000-character synthetic messages plus latest user correction; fixed sourced metadata",
+    "baseline": "2aaf5d2 _bounded_history",
+    "before_prompt_chars": 94039,
+    "after_prompt_chars": 19304,
+    "reduction_percent": 79.47,
+    "new_summary_llm_calls": 0,
+    "real_tokens_cost_or_latency": "not measured; character count is not provider billing usage"
+  },
+  "implementation_status": {
+    "phase_1a": "implemented; deterministic routing/review tests passed; blind review pending",
+    "phase_1b": "implemented; editorial synthetic benchmark passed; independent labels pending",
+    "phase_1c": "offline optional experiment provided; production disabled; real model comparison not run",
+    "phase_2": "qualified-card reader and single-card editorial release workflow implemented; fulltext and relation authoring deferred",
+    "phase_3": "deterministic resume and protected context budget implemented"
+  },
+  "tests": {
+    "python": {
+      "command": "python3 -m unittest discover -q",
+      "run": 516,
+      "failures": 0,
+      "errors": 0,
+      "provider": "isolated test doubles; no real-provider quality claim"
+    },
+    "browser": {
+      "product-e2e": {
+        "passed": 12,
+        "failed": 0
+      },
+      "plan-e2e": {
+        "passed": 7,
+        "failed": 0
+      },
+      "ui-e2e": {
+        "passed": 17,
+        "failed": 0
+      },
+      "credits-ui-e2e": {
+        "passed": 13,
+        "failed": 0
+      },
+      "billing-ops-ui-e2e": {
+        "passed": 11,
+        "failed": 0
+      },
+      "billing-ops-http-e2e": {
+        "passed": 8,
+        "failed": 0
+      },
+      "mrmao-e2e": {
+        "passed": 5,
+        "failed": 0
+      }
+    },
+    "browser_total": 73,
+    "compileall": "passed",
+    "diff_check": "passed"
+  },
+  "loaded_source_fingerprints": {
+    "pipeline_version": "55941270ff9ff8d6048dd6f69d9713f5e49bd4b4ba23ec4c452cd3e798ed71b9",
+    "prompt_version": "cd9c67ba9127030aed71d62164e65fc86424bd72c910b7957f12fbf9772e4d4d",
+    "knowledge_version": "581957920bd7cba7c5177a88235235dd26bbc76f5c7c8fb803b411a7450c6aed"
+  },
+  "plan_preserved": true,
+  "not_measured": [
+    "natural conversation paired blind review",
+    "real local semantic quality comparison",
+    "provider token/cost reconciliation",
+    "verified first-content and complete-answer P50/P95 with real model"
+  ],
+  "release_inventory": {
+    "files": 201,
+    "findings": 0,
+    "scanner": "scripts/check_release.py"
+  },
+  "clean_indexed_checkout": {
+    "run": 516,
+    "passed": 508,
+    "skipped": 8,
+    "failures": 0,
+    "errors": 0,
+    "skip_reason": "optional local PDF/OCR assets not distributed"
+  },
+  "local_service": {
+    "reloaded": true,
+    "host": "127.0.0.1",
+    "port": 8877,
+    "private_database_backup": true,
+    "app_admin_assets_health": 200,
+    "unauthenticated_knowledge_endpoints": 401,
+    "real_generation_tested": false
+  }
+}

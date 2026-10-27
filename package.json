@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "description": "教员 持续对话与有出处的思想问答",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "python3 -m unittest discover -q",
     "test:ui": "node tests/e2e/product.mjs",
@@ -14,7 +16,11 @@
     "test:ui:billing-http": "node tests/e2e/billing-ops-http.mjs",
     "test:live": "node tests/e2e/consult.mjs",
     "test:live:plan": "python3 scripts/live_plan_check.py --run",
-    "test:live:product": "python3 scripts/live_product_check.py --run"
+    "test:live:product": "python3 scripts/live_product_check.py --run",
+    "test:ui:mrmao": "node tests/e2e/mrmao.mjs",
+    "test:retrieval:mrmao": "python3 scripts/evaluate_mrmao.py"
   },
-  "devDependencies": { "playwright": "1.62.1" }
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
 }

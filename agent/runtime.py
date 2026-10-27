@@ -31,10 +31,11 @@ from .support import support_instruction
 from .telemetry import audit_metadata, ensure_telemetry_scope, record_stage
 from .firecrawl import FirecrawlClient, FirecrawlConfig
 from .llm import LLMConfig, LLMError, LLMResponse, OpenAICompatibleClient, parse_json_object
-from .vector import search_vectors
+from .knowledge_versions import knowledge_revision
+from .vector import search_vectors, rrf_weight
 from .dialogue import (CONSULT_RULES, UNDERSTANDING_PARAMETERS, CuratedMethodLibrary,
                        answer_format_limits, final_review_message, format_repair_message,
-                       format_violations, quote_repair_message, understanding)
+                       format_violations, quote_repair_message, understanding, response_contract_message)
 from .db import connect as db_connect, ensure_schema, record_citations, record_llm_run, record_message, record_session
 
 
@@ -264,7 +265,7 @@ class LocalKnowledge:
                 source_rank = int(item.get("_rrf_rank") or rank)
                 method = "vector" if item.get("vector_score") is not None else "fts5"
                 score = item.get("vector_score") if method == "vector" else item.get("fts_score", item.get("rank"))
-                entry["hybrid_score"] = entry.get("hybrid_score", 0.0) + 1.0 / (60.0 + source_rank)
+                entry["hybrid_score"] = entry.get("hybrid_score", 0.0) + rrf_weight(source_rank)
                 if item.get("vector_score") is not None:
                     entry["vector_score"] = max(float(entry.get("vector_score", -1.0)), float(item["vector_score"]))
                     entry["retrieval_methods"] = sorted(set(entry.get("retrieval_methods", [])) | {"vector"})
@@ -781,6 +782,7 @@ class Agent:
             except ValueError as exc:
                 yield {"type": "error", "error": str(exc)}
                 return
+        library_revision = knowledge_revision(self.config.db_path)
         effective_network = bool(network_enabled) and mode != "historical"
         all_tool_objects = self.tools(mode="research", network_enabled=True)
         visible_tool_objects = self.tools(mode=mode, network_enabled=effective_network)
@@ -788,6 +790,8 @@ class Agent:
         handlers = {t.name: t.handler for t in [*all_tool_objects, *visible_tool_objects]}
         handlers["firecrawl_search"] = lambda query, limit=None: self._firecrawl_search(
             query, limit, network_enabled=effective_network)
+        if mode == "consult":
+            handlers["method_search"] = lambda query, limit=4: self.method_library.search(query=query, limit=limit, original_query=question)
         tool_results: List[Dict[str, Any]] = []
         current_understanding = None
         reviewing_final = False
@@ -874,8 +878,8 @@ class Agent:
                     candidate_seen = candidate_seen or result.get("status") == "candidate_page_match"
                     yield {"type": "tool", "name": name, "result": result, "step": step + 1}
                     messages.append({"role": "tool", "tool_call_id": call.get("id", uuid.uuid4().hex), "name": name, "content": json.dumps(result, ensure_ascii=False)})
-                if urgent_mode:
-                    messages.append({'role': 'system', 'content': support_instruction('urgent_safety')})
+                if current_understanding is not None:
+                    messages.append({'role': 'system', 'content': response_contract_message(current_understanding, format_limits)})
                 continue
             if mode == 'consult':
                 if current_understanding is None:
@@ -954,6 +958,10 @@ class Agent:
                     continue
                 yield {'type': 'error', 'error': '历史直接引语未通过逐字或日期资格核对，本轮未发布。请改为转述或核对出处后重试。'}
                 return
+            if knowledge_revision(self.config.db_path) != library_revision:
+                yield {'type': 'error', 'error': '资料版本或核验资格已更新，本轮未发布；请重新报价后重试。'}
+                return
+            gate['knowledge_revision'] = library_revision
             gate['claim_checks'] = claim_checks
             if response.content:
                 # Buffer the complete assistant turn until tool calls are
@@ -1137,6 +1145,8 @@ class Agent:
                     role, content = message.get('role', 'user'), message.get('content', '')
                     retained = previous[(role, content)].popleft() if previous[(role, content)] else ([], [])
                     meta = {'source': 'session_export'}
+                    from .reader import selection_ref
+                    if selection_ref(message.get('reading_selection')):meta['reading_selection']=selection_ref(message['reading_selection'])
                     if isinstance(message.get('turn_id'), str) and re.fullmatch(r'[a-f0-9]{32}', message['turn_id']):
                         meta['turn_id'] = message['turn_id']
                     message_id = record_message(conn, session_id, role, content, message.get('evidence_ids', retained[0]), meta)
@@ -1180,6 +1190,8 @@ class Agent:
                 details = json.loads(item['metadata_json'] or '{}')
                 if isinstance(details, dict) and isinstance(details.get('turn_id'), str) and re.fullmatch(r'[a-f0-9]{32}', details['turn_id']):
                     value['turn_id'] = details['turn_id']
+                from .reader import selection_ref
+                if isinstance(details,dict) and selection_ref(details.get('reading_selection')):value['reading_selection']=selection_ref(details['reading_selection'])
                 messages.append(value)
             return messages, meta if isinstance(meta, dict) else {}
         except (OSError, ValueError, sqlite3.Error):

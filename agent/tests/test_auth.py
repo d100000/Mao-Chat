@@ -69,8 +69,9 @@ class AuthTests(unittest.TestCase):
         limited = AuthService(self.db, max_captcha_attempts=2)
         math = limited.create_math_challenge()
         answer = self._answer(self._expression(math))
-        self.assertFalse(limited.verify_math(math["challenge_id"], "0")["ok"])
-        self.assertFalse(limited.verify_math(math["challenge_id"], "0")["ok"])
+        wrong = str(int(answer) + 1)  # Zero can be a valid random subtraction answer.
+        self.assertFalse(limited.verify_math(math["challenge_id"], wrong)["ok"])
+        self.assertFalse(limited.verify_math(math["challenge_id"], wrong)["ok"])
         self.assertFalse(limited.verify_math(math["challenge_id"], answer)["ok"])
 
     def test_challenge_consumption_is_atomic_under_concurrency(self):

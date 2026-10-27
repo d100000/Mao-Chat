@@ -50,7 +50,7 @@ PUBLIC_ROW_KEYS = {
     'modern_application', 'historical_conditions', 'unsupported_extensions',
     'case_id', 'facts', 'outcome_evidence', 'unknowns', 'modern_analogy',
     'non_analogies', 'source_ids', 'completion', 'supporting_evidence_ids',
-    'source_fingerprint', 'problem_context', 'resource_conditions',
+    'source_fingerprint', 'source_version', 'problem_context', 'resource_conditions',
     'untrusted', 'status', 'text', 'markdown',
 }
 

@@ -1,0 +1,424 @@
+{
+  "labels": "editorial synthetic; independent human review pending",
+  "fixture_sha256": "9c16e5d9153597531caefdf5bce814cf85fcc344d8194b3ea4297a290c4c9440",
+  "corpus_counts": {
+    "evidence_cards": 37,
+    "quotes": 25,
+    "events": 10
+  },
+  "semantic": {
+    "enabled": false,
+    "status": "disabled",
+    "dependency_installed": false,
+    "reason": "语义依赖未安装且无已验收模型，继续使用增强词法",
+    "evaluated": false,
+    "experiment_status": "disabled",
+    "model": null,
+    "minimum_similarity": 0.65
+  },
+  "channels": {
+    "lexical": {
+      "top1_pass": 12,
+      "hit3_pass": 15,
+      "total": 22,
+      "p50_ms": 0.268,
+      "p95_ms": 0.282,
+      "rows": [
+        {
+          "id": "daily-01",
+          "top3": [
+            "collect-experience-and-feedback",
+            "investigate-actual-conditions",
+            "learn-with-conditions"
+          ],
+          "top1": false,
+          "hit3": true
+        },
+        {
+          "id": "daily-02",
+          "top3": [
+            "disagreement-and-persuasion",
+            "discussion-and-responsibility",
+            "learn-with-conditions"
+          ],
+          "top1": false,
+          "hit3": false
+        },
+        {
+          "id": "daily-03",
+          "top3": [
+            "learn-with-conditions",
+            "discussion-and-responsibility",
+            "participation-and-willingness"
+          ],
+          "top1": false,
+          "hit3": false
+        },
+        {
+          "id": "daily-04",
+          "top3": [],
+          "top1": false,
+          "hit3": false
+        },
+        {
+          "id": "daily-05",
+          "top3": [],
+          "top1": false,
+          "hit3": false
+        },
+        {
+          "id": "daily-06",
+          "top3": [
+            "collect-experience-and-feedback",
+            "discussion-and-responsibility"
+          ],
+          "top1": false,
+          "hit3": true
+        },
+        {
+          "id": "daily-07",
+          "top3": [
+            "disagreement-and-persuasion"
+          ],
+          "top1": false,
+          "hit3": false
+        },
+        {
+          "id": "daily-08",
+          "top3": [
+            "collect-experience-and-feedback",
+            "investigate-actual-conditions",
+            "learn-with-conditions"
+          ],
+          "top1": false,
+          "hit3": true
+        },
+        {
+          "id": "daily-09",
+          "top3": [
+            "disagreement-and-persuasion",
+            "discussion-and-responsibility",
+            "investigate-actual-conditions"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-10",
+          "top3": [
+            "unknowns-and-correction",
+            "participation-and-willingness"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-11",
+          "top3": [],
+          "top1": false,
+          "hit3": false
+        },
+        {
+          "id": "daily-12",
+          "top3": [
+            "discussion-and-responsibility",
+            "learn-with-conditions",
+            "participation-and-willingness"
+          ],
+          "top1": false,
+          "hit3": false
+        },
+        {
+          "id": "daily-13",
+          "top3": [
+            "collect-experience-and-feedback",
+            "unknowns-and-correction"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "exact-01",
+          "top3": [
+            "practice-and-revision",
+            "collect-experience-and-feedback"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "exact-02",
+          "top3": [
+            "investigate-actual-conditions",
+            "concrete-contradictions",
+            "unknowns-and-correction"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "exact-03",
+          "top3": [
+            "people-and-care",
+            "disagreement-and-persuasion"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "exact-04",
+          "top3": [
+            "participation-and-willingness",
+            "discussion-and-responsibility",
+            "situation-and-interests"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "exact-05",
+          "top3": [
+            "discussion-and-responsibility",
+            "disagreement-and-persuasion",
+            "investigate-actual-conditions"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "exact-06",
+          "top3": [
+            "direction-and-stage",
+            "concrete-contradictions"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "none-01",
+          "top3": [],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "none-02",
+          "top3": [],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "none-03",
+          "top3": [],
+          "top1": true,
+          "hit3": true
+        }
+      ]
+    },
+    "enhanced": {
+      "top1_pass": 22,
+      "hit3_pass": 22,
+      "total": 22,
+      "p50_ms": 0.495,
+      "p95_ms": 0.527,
+      "rows": [
+        {
+          "id": "daily-01",
+          "top3": [
+            "investigate-actual-conditions",
+            "discussion-and-responsibility",
+            "collect-experience-and-feedback"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-02",
+          "top3": [
+            "investigate-actual-conditions",
+            "disagreement-and-persuasion",
+            "discussion-and-responsibility"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-03",
+          "top3": [
+            "practice-and-revision",
+            "learn-with-conditions",
+            "discussion-and-responsibility"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-04",
+          "top3": [
+            "people-and-care"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-05",
+          "top3": [
+            "concrete-contradictions"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-06",
+          "top3": [
+            "discussion-and-responsibility",
+            "collect-experience-and-feedback"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-07",
+          "top3": [
+            "participation-and-willingness",
+            "disagreement-and-persuasion"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-08",
+          "top3": [
+            "learn-with-conditions",
+            "collect-experience-and-feedback",
+            "investigate-actual-conditions"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-09",
+          "top3": [
+            "disagreement-and-persuasion",
+            "discussion-and-responsibility",
+            "investigate-actual-conditions"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-10",
+          "top3": [
+            "unknowns-and-correction",
+            "people-and-care",
+            "participation-and-willingness"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-11",
+          "top3": [
+            "direction-and-stage"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-12",
+          "top3": [
+            "situation-and-interests",
+            "investigate-actual-conditions",
+            "discussion-and-responsibility"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "daily-13",
+          "top3": [
+            "collect-experience-and-feedback",
+            "discussion-and-responsibility",
+            "unknowns-and-correction"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "exact-01",
+          "top3": [
+            "practice-and-revision",
+            "collect-experience-and-feedback"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "exact-02",
+          "top3": [
+            "investigate-actual-conditions",
+            "concrete-contradictions",
+            "unknowns-and-correction"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "exact-03",
+          "top3": [
+            "people-and-care",
+            "disagreement-and-persuasion"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "exact-04",
+          "top3": [
+            "participation-and-willingness",
+            "discussion-and-responsibility",
+            "situation-and-interests"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "exact-05",
+          "top3": [
+            "discussion-and-responsibility",
+            "disagreement-and-persuasion",
+            "investigate-actual-conditions"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "exact-06",
+          "top3": [
+            "direction-and-stage",
+            "concrete-contradictions"
+          ],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "none-01",
+          "top3": [],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "none-02",
+          "top3": [],
+          "top1": true,
+          "hit3": true
+        },
+        {
+          "id": "none-03",
+          "top3": [],
+          "top1": true,
+          "hit3": true
+        }
+      ]
+    }
+  }
+}

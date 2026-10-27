@@ -23,6 +23,11 @@ DIMENSION = 384
 MAX_SEARCH_LIMIT = 30
 
 
+def rrf_weight(rank, k=60):
+    """Shared reciprocal rank contribution (lexical/semantic scores are not comparable)."""
+    return 1.0 / (float(k) + max(1, int(rank)))
+
+
 def _bounded_limit(value: int, default: int = 10) -> int:
     """Clamp untrusted retrieval limits before slicing result sets."""
     if isinstance(value, bool):

@@ -26,14 +26,16 @@ def indexed_text(*values) -> str:
     return " ".join(tokens(" ".join(str(v or "") for v in values)))
 
 
-def build_indexes(conn: sqlite3.Connection) -> dict:
-    ensure_schema(conn)
+def build_indexes(conn: sqlite3.Connection, *, own_transaction=True) -> dict:
+    if own_transaction:
+        ensure_schema(conn)
     suffix = "__staging"
     backup_suffix = "__backup"
     names = ("pages_fts", "passages_fts", "quotes_fts", "events_fts", "philosophy_rules_fts")
     # Build into staging virtual tables first.  The live tables remain intact
     # if tokenization, an insert, or a source read fails.
-    conn.execute("BEGIN IMMEDIATE")
+    if own_transaction:
+        conn.execute("BEGIN IMMEDIATE")
     try:
         for name in names:
             conn.execute(f"DROP TABLE IF EXISTS {name}{suffix}")
@@ -80,10 +82,12 @@ def build_indexes(conn: sqlite3.Connection) -> dict:
             conn.execute(f"ALTER TABLE {name}{suffix} RENAME TO {name}")
         for name in names:
             conn.execute(f"DROP TABLE IF EXISTS {name}{backup_suffix}")
-        conn.commit()
+        if own_transaction:
+            conn.commit()
         return {"pages": counts["pages_fts"], "passages": counts["passages_fts"], "quotes": counts["quotes_fts"], "events": counts["events_fts"], "philosophy_rules": counts["philosophy_rules_fts"]}
     except Exception:
-        conn.rollback()
+        if own_transaction:
+            conn.rollback()
         raise
 
 

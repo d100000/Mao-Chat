@@ -141,7 +141,7 @@ def prompt_statement_context(meta):
         'notice': '以下记录可纠正。原话摘录只是整理来源，不自动证明摘要准确。用户停用或更正的内容优先于旧对话与助手摘要，不能从历史重建为当前事实；旧确认不证明条件永远不变，当前用户明确修正优先。',
         'active': [{key: row[key] for key in ('statement_id', 'field', 'value', 'origin', 'confirmation', 'source_turn_id', 'source_excerpt')}
                    for row in records if row['status'] == 'active' and (base_field(row['field']), row['value']) in usable][-24:],
-        'excluded': [{'field': row['field'], 'value': row['value'], 'status': row['status']}
+        'excluded': [{key: row[key] for key in ('field','value','status','origin','source_turn_id','source_excerpt')}
                      for row in records if row['status'] != 'active'][-MAX_STATEMENTS:],
     }
 

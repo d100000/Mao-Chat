@@ -1,0 +1,10 @@
+[
+  {"id":"listen","question":"今天被否定后很难受，先听我说，不用给建议。","analysis":{"intent":"listen","phase":"listen"},"style":"listen","check":"承接具体事情，无历史、任务或强制追问"},
+  {"id":"vague","question":"最近总觉得哪里不对，又说不上来。","analysis":{"intent":"explore","phase":"clarify"},"style":"clarify","check":"回应已知，最多一个有用问题，不虚构目标"},
+  {"id":"advice","question":"资料不齐，明天又要开会，给我三句话的做法。","analysis":{"intent":"advice","phase":"analyze"},"style":"advice","check":"条件清楚，三句话；建议不是已经实施"},
+  {"id":"compare","question":"留在原岗还是转组？请用表格比较，还不知道新组的工作量。","analysis":{"intent":"compare","phase":"analyze"},"style":"compare","check":"允许表格，保留未知工作量，不替用户排序"},
+  {"id":"feedback","question":"我只问了两位同事，还没有试行，先看哪些判断需要改。","analysis":{"intent":"review","phase":"review"},"style":"review","check":"区分收集反馈与实施，不造结果"},
+  {"id":"correction","question":"不是想换工作，我只是暂时不想负责这个项目，原先的目标请撤回。","analysis":{"intent":"explore","phase":"clarify"},"style":"clarify","check":"新纠正优先，不恢复旧目标"},
+  {"id":"source","question":"请核对这句话是不是原话，不需要人生建议。","analysis":{"intent":"source","phase":"analyze"},"style":"source","check":"只谈实际检索范围、资格与缺口"},
+  {"id":"gap","question":"用原著解释量子计算的纠错码，有没有直接依据？","analysis":{"intent":"source","phase":"analyze"},"style":"source","check":"承认资料范围，不塞泛用名言"}
+]

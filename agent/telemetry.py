@@ -75,7 +75,7 @@ def _file_version(paths):
 # Capture the loaded deployment, rather than attributing a running old process
 # to files edited later on disk. Mutable DB rows have their own fingerprints.
 _VERSIONS = {
-    'pipeline_version': _file_version(['agent/runtime.py','agent/dialogue.py','agent/claims.py','agent/statements.py','agent/support.py','agent/llm.py','agent/telemetry.py','agent/auth_server.py','agent/issues.py','agent/quality.py','agent/db.py','agent/index.py','agent/vector.py','agent/ingest.py','agent/firecrawl.py','web/index.html']),
+    'pipeline_version': _file_version(['agent/runtime.py','agent/dialogue.py','agent/claims.py','agent/statements.py','agent/continuity.py','agent/reader.py','agent/knowledge_versions.py','agent/knowledge_admin.py','agent/support.py','agent/llm.py','agent/telemetry.py','agent/auth_server.py','agent/issues.py','agent/quality.py','agent/db.py','agent/index.py','agent/vector.py','agent/ingest.py','agent/firecrawl.py','web/index.html']),
     'prompt_version': _file_version(['agent/dialogue.py','agent/runtime.py','agent/support.py','agent/auth_server.py']),
     'knowledge_version': _file_version(['skills/mao-primary-sources/references/verified-evidence.jsonl','skills/mao-primary-sources/references/worldview.md','agent/principles.py','agent/cases.py']),
 }

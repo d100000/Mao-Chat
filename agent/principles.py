@@ -13,6 +13,9 @@ import re
 PRINCIPLES = (
     {
         'principle_id': 'principle:practice-and-revision',
+        'query_examples': ['先试一小步再决定', '做完效果不对怎么办', '试过之后重新判断'],
+        'applicable_when': '能观察实际反馈，允许调整或停止',
+        'counterexample': '把一次顺利当作必然成功',
         'label': '实践与认识的相互检验', 'dimension_type': 'worldview',
         'evidence_ids': ['VE04'],
         'author_claim': '认识依赖实践，理论应与实践相联系。',
@@ -24,6 +27,9 @@ PRINCIPLES = (
     },
     {
         'principle_id': 'principle:investigate-actual-conditions',
+        'query_examples': ['大家拍脑袋下结论', '团队总凭感觉做决定', '没问当事人就认定原因'],
+        'applicable_when': '有尚未核实的事实或信息来源',
+        'counterexample': '已有充分事实仍无止境要求调查',
         'label': '调查实际并学习研究方法', 'dimension_type': 'worldview',
         'evidence_ids': ['VE08'],
         'author_claim': '向实际工作者调查，准备纲目并亲自记录讨论；旧调查材料帮助学习研究方法。',
@@ -35,6 +41,9 @@ PRINCIPLES = (
     },
     {
         'principle_id': 'principle:concrete-contradictions',
+        'query_examples': ['事情堆在一起不知道先办哪件', '同样办法换个地方就不灵了', '两个选择各有难处'],
+        'applicable_when': '可以区分问题的对象、阶段与条件',
+        'counterexample': '只因表面相像就照套同一种方法',
         'label': '具体问题采用具体方法', 'dimension_type': 'worldview',
         'evidence_ids': ['VE05'],
         'author_claim': '研究矛盾特殊性，依据问题性质选择方法，反对固定公式。',
@@ -46,6 +55,9 @@ PRINCIPLES = (
     },
     {
         'principle_id': 'principle:situation-and-interests',
+        'query_examples': ['做决定的人不用承担后果', '出钱出力的人说不上话'],
+        'applicable_when': '需要核对参与者资源、关系和负担',
+        'counterexample': '凭职业或身份推断他人动机',
         'label': '从处境与利益结构理解行动', 'dimension_type': 'worldview',
         'evidence_ids': ['VE01'],
         'author_claim': '联系土地、资本与生计理解不同农民群体的处境和行动，并采取反压迫、农民解放的立场。',
@@ -57,6 +69,9 @@ PRINCIPLES = (
     },
     {
         'principle_id': 'principle:people-and-care',
+        'query_examples': ['快撑不住了还要硬扛', '为了工作把身体熬坏了', '是不是有用才值得被尊重'],
+        'applicable_when': '用户明确表达个人负担或利益冲突',
+        'counterexample': '用集体目标要求个人无限透支',
         'label': '人民利益与人的实际代价', 'dimension_type': 'values',
         'evidence_ids': ['VE11'],
         'author_claim': '以人民解放和人民利益为宗旨，接受有根据的批评，关心同志并尽量减少不必要牺牲。',
@@ -68,6 +83,9 @@ PRINCIPLES = (
     },
     {
         'principle_id': 'principle:participation-and-willingness',
+        'query_examples': ['替别人安排好了但他不愿意', '家里人没有问过我的想法'],
+        'applicable_when': '共同决定影响多方，需要明确参与意愿',
+        'counterexample': '把沉默或礼貌回应当成同意',
         'label': '受影响者的参与与自愿', 'dimension_type': 'values',
         'evidence_ids': ['VE13', 'VE03'],
         'author_claim': '政策应适合当时当地群众要求，反对违反自愿的命令主义；部分改革由群众自己行动。',
@@ -79,6 +97,9 @@ PRINCIPLES = (
     },
     {
         'principle_id': 'principle:collect-experience-and-feedback',
+        'query_examples': ['大家说法不一样怎么整理', '收集了一堆意见却不知道怎么用'],
+        'applicable_when': '有多方具体经验，需要综合后反馈检验',
+        'counterexample': '以多数人赞同代替事实检验',
         'label': '综合实际经验并回到行动检验', 'dimension_type': 'organizational_conditions',
         'evidence_ids': ['VE10'],
         'author_claim': '把分散意见经研究集中，再回到群众行动中检验、总结和改进。',
@@ -90,6 +111,9 @@ PRINCIPLES = (
     },
     {
         'principle_id': 'principle:direction-and-stage',
+        'query_examples': ['眼前要挣钱以后又想做喜欢的事', '理想很远眼下这一关怎么过'],
+        'applicable_when': '用户表达了长期重视的方向与眼前任务',
+        'counterexample': '把用户本轮要求简短误当成目标改变',
         'label': '长期方向与阶段任务分开', 'dimension_type': 'values',
         'evidence_ids': ['VE12', 'VL03'],
         'author_claim': '把最高目标与当时阶段任务分开，并在相应条件下提出当前政策。',
@@ -101,6 +125,9 @@ PRINCIPLES = (
     },
     {
         'principle_id': 'principle:discussion-and-responsibility',
+        'query_examples': ['开会说了很多最后没人负责', '大家都以为别人会去做'],
+        'applicable_when': '有共同任务，需要澄清讨论与分工',
+        'counterexample': '把组织领导方式直接套到家庭关系',
         'label': '集体讨论与明确责任', 'dimension_type': 'organizational_conditions',
         'evidence_ids': ['VL13', 'VL06'],
         'author_claim': '依靠集体讨论，把问题摆上桌面，并在统一领导条件下发挥各方面积极性。',
@@ -112,6 +139,9 @@ PRINCIPLES = (
     },
     {
         'principle_id': 'principle:unknowns-and-correction',
+        'query_examples': ['承认自己不懂会不会丢脸', '我前面说错了想改一下'],
+        'applicable_when': '存在知识缺口或新的明确纠正',
+        'counterexample': '把权威或面子当成拒绝纠正的理由',
         'label': '承认未知并接受纠正', 'dimension_type': 'life_responsibility',
         'evidence_ids': ['VL14'],
         'author_claim': '不懂时向下级请教，先做学生，分析不同意见，取得成绩也应戒骄。',
@@ -123,6 +153,9 @@ PRINCIPLES = (
     },
     {
         'principle_id': 'principle:learn-with-conditions',
+        'query_examples': ['别人的成功经验照着做却不管用', '要不要学同行的那一套'],
+        'applicable_when': '有可比较的经验及适用条件',
+        'counterexample': '只模仿表面动作，不比较资源与环境',
         'label': '结合实际学习外部长处', 'dimension_type': 'worldview',
         'evidence_ids': ['VL07'],
         'author_claim': '学习各民族各国的长处，结合中国实际分析吸收，反对全盘排斥和机械照抄。',
@@ -134,6 +167,9 @@ PRINCIPLES = (
     },
     {
         'principle_id': 'principle:disagreement-and-persuasion',
+        'query_examples': ['一讨论就吵起来谁也不服谁', '意见不同还能好好说吗'],
+        'applicable_when': '普通分歧中可说明理由和核对理解',
+        'counterexample': '把普通争执升级为敌我裁定',
         'label': '分歧处理与说服的条件', 'dimension_type': 'organizational_conditions',
         'evidence_ids': ['VL09', 'VL10'],
         'author_claim': '人民内部思想问题采用讨论、批评和说服，同时保留政治标准与组织纪律。',
@@ -173,12 +209,22 @@ def available_principles(reviewed_ids):
     return result
 
 
-def search_principles(query, reviewed_ids, limit=3):
+def search_principles(query, reviewed_ids, limit=3, *, enhanced=True, original_query=""):
     terms = _tokens(query)
+    original_terms = _tokens(original_query)
     scored = []
     for row in available_principles(reviewed_ids):
         hay = ' '.join(str(row[key]) for key in ('label', 'keywords', 'author_claim', 'modern_application'))
         score = len(terms & _tokens(hay))
+        if enhanced:
+            # Examples are retrieval hints, not evidence about this user's life.
+            score = max(score, len(original_terms & _tokens(hay)))
+            stop = {'一个', '什么', '怎么', '可以', '时候', '问题', '不知', '知道'}
+            query_terms = (terms | original_terms) - stop
+            matches = [len(query_terms & (_tokens(example) - stop)) for example in row['query_examples']]
+            bonus = max(matches, default=0)
+            if bonus >= 2:
+                score += min(8, bonus)
         if score:
             row['retrieval_score'] = score
             scored.append(row)
