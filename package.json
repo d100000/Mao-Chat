@@ -7,8 +7,10 @@
   "scripts": {
     "test": "python3 -m unittest discover -q",
     "test:ui": "node tests/e2e/product.mjs",
+    "test:ui:plan": "node tests/e2e/plan.mjs",
     "test:ui:legacy": "node tests/e2e/run.mjs",
     "test:live": "node tests/e2e/consult.mjs",
+    "test:live:plan": "python3 scripts/live_plan_check.py --run",
     "test:live:product": "python3 scripts/live_product_check.py --run"
   },
   "devDependencies": { "playwright": "1.62.1" }

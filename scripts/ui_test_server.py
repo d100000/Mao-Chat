@@ -39,7 +39,7 @@ def make_test_server(port=8876, state_dir=None):
         # The application state stays independent of the real project/user.
         with sqlite3.connect(db) as conn:
             conn.execute('PRAGMA foreign_keys=OFF')
-            for table in ('auth_sessions', 'admin_sessions', 'captcha_challenges', 'auth_audit', 'auth_rate_limits', 'users', 'admins', 'app_settings', 'citations', 'messages', 'llm_runs', 'sessions', 'web_sources', 'issue_state'):
+            for table in ('auth_sessions', 'admin_sessions', 'captcha_challenges', 'auth_audit', 'auth_rate_limits', 'users', 'admins', 'app_settings', 'citations', 'messages', 'llm_runs', 'sessions', 'web_sources', 'issue_state', 'issue_feedback', 'quality_runs'):
                 if conn.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
                     conn.execute('DELETE FROM ' + table)
     os.environ['MAO_AGENT_DB'] = str(db)
@@ -76,7 +76,7 @@ def make_test_server(port=8876, state_dir=None):
                     'goal': '六周内服务好现有客户' if not listening else '',
                     'turn_request': '先听我说说' if listening else '确定本周可以尝试的一步',
                     'known_facts': ['用户希望讨论当前问题'],
-                    'constraints': [], 'uncertainties': ['具体情况待用户补充'],
+                    'constraints': ['没有额外预算'] if '没有额外预算' in question else [], 'uncertainties': ['具体情况待用户补充'],
                     'next_question': '' if listening else '现有客户最在意哪类问题？',
                 }
                 if not listening:
@@ -87,6 +87,9 @@ def make_test_server(port=8876, state_dir=None):
                         'adjust_signal': '尚未获得具体反馈',
                         'review_hint': '有反馈时再一起复盘',
                     }
+                analysis['statement_sources'] = []
+                for field, quote in [('stage_goal','六周内留住现有客户'),('constraints:0','没有额外预算')]:
+                    if quote in question: analysis['statement_sources'].append({'field':field,'quote':quote})
                 calls = [{'index': 0, 'id': 'test-understanding', 'type': 'function', 'function': {'name': 'understand_user', 'arguments': json.dumps(analysis, ensure_ascii=False)}}]
                 if not listening:
                     calls.append({'index': 1, 'id': 'test-method', 'type': 'function', 'function': {'name': 'method_search', 'arguments': '{"query":"调查研究 人民利益","limit":4}'}})

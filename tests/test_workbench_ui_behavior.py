@@ -23,6 +23,8 @@ assert.equal(evidenceStatus({reviewed:1}), '已审核');
 assert.equal(evidenceStatus({verification_status:'reviewed',untrusted:true}), '候选');
 assert.equal(evidenceStatus({reviewed:1,status:'candidate_page_match'}), '候选');
 assert.equal(evidenceStatus({record_type:'method_note'}), '方法概括');
+assert.equal(evidenceStatus({record_type:'historical_case',reviewed:true}), '有限已核事实，不证明结果');
+assert.equal(evidenceStatus({record_type:'historical_case',reviewed:true,untrusted:true}), '案例线索 · 待核');
 assert.ok(!formatAnswer('<img src=x onerror=alert(1)>').includes('<img'));
 assert.ok(formatAnswer('**原文**').includes('<strong>原文</strong>'));
 """
@@ -32,7 +34,7 @@ assert.ok(formatAnswer('**原文**').includes('<strong>原文</strong>'));
     def test_public_understanding_updates_and_remains_correctable(self):
         source = (ROOT / 'web/index.html').read_text(encoding='utf-8')
         esc = re.search(r'const esc=.*?;\n', source).group()
-        render = source[source.index('function renderUnderstanding'):source.index('function renderTab')]
+        render = source[source.index('function statementLabel'):source.index('function renderTab')]
         harness = r'''
 const assert=require('node:assert/strict');
 class Element {
@@ -92,10 +94,39 @@ assert.deepEqual(short.map(x=>x.role),['user','assistant']);
         helpers = source[source.index('function sourceKeys'):source.index('function hydrateCitations')]
         code = helpers + r'''
 const assert=require('node:assert/strict');
-const state={sources:[{row:{record_type:'evidence_card',evidence_id:'VE08'}},{row:{record_type:'historical_event',event_id:'event:TL01',evidence_id:'NOT_RETURNED_AUTHOR'}},{row:{record_type:'principle_note',principle_id:'principle:care',evidence_ids:['VE11']}}]};
+const state={sources:[{row:{record_type:'evidence_card',evidence_id:'VE08'}},{row:{record_type:'historical_event',event_id:'event:TL01',evidence_id:'NOT_RETURNED_AUTHOR'}},{row:{record_type:'principle_note',principle_id:'principle:care',evidence_ids:['VE11']}},{row:{record_type:'historical_case',case_id:'case:UI',event_id:'event:UNRETURNED',source_ids:['TL_UNRETURNED']}}]};
 assert.deepEqual(citedIds('依据【VE08：原著位置】，未知【FAKE01】'),['VE08']);
 assert.deepEqual(citedIds('【NOT_RETURNED_AUTHOR】【VE11】'),[]);
 assert.deepEqual(citedIds('【event:TL01：公开事实】【principle:care｜思想参考】'),['event:TL01','principle:care']);
+assert.deepEqual(citedIds('【case:UI】'),['case:UI']);assert.deepEqual(citedIds('【event:UNRETURNED】【TL_UNRETURNED】'),[]);
+'''
+        result = subprocess.run(['node', '-e', code], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_statement_sources_do_not_turn_model_summaries_into_user_quotes(self):
+        source = (ROOT / 'web/index.html').read_text(encoding='utf-8')
+        helpers = source[source.index('function statementLabel'):source.index('function changeStatement')]
+        code = helpers + r'''
+const assert=require('node:assert/strict');
+let view=statementPresentation({field:'constraints:0',value:'资源限制',source_excerpt:'私人假引语',origin:'model_summary',confirmation:'auto_confirmed'});
+assert.equal(view.quote,'');assert.equal(view.confirmation,'tentative');assert.match(view.source,/尚无逐字来源/);
+view=statementPresentation({field:'stage_goal',value:'两周核实客户问题',source_excerpt:'只核实客户问题',origin:'user_excerpt',confirmation:'tentative',status:'inactive'});
+assert.equal(view.label,'阶段目标');assert.equal(view.quote,'只核实客户问题');assert.equal(view.status,'inactive');assert.equal(view.confirmation,'tentative');
+view=statementPresentation({field:'stage_goal',origin:'user_correction',source_excerpt:'用户新更正',confirmation:'confirmed',status:'superseded'});
+assert.equal(view.confirmation,'confirmed');assert.equal(view.status,'superseded');assert.match(view.source,/明确更正/);
+assert.equal(displayRecordTime('not-a-date'),'记录时间未提供');
+'''
+        result = subprocess.run(['node', '-e', code], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_claim_review_does_not_claim_paraphrases_are_verified(self):
+        source = (ROOT / 'web/index.html').read_text(encoding='utf-8')
+        helper = source[source.index('function renderClaimChecks'):source.index('function renderEvidence')]
+        code = helper + r'''
+const assert=require('node:assert/strict');
+class Element {constructor(){this.children=[];this.textContent='';}append(...items){this.children.push(...items);}get text(){return this.textContent+this.children.map(x=>x.text).join('');}}
+const document={createElement:()=>new Element()},state={claimChecks:{passed:true,claims:[{text:'<img src=x onerror=alert(1)>',notice:'转述仍需人工审阅'}],quote_checks:[{status:'matched'}]}};
+const body=new Element();renderClaimChecks(body);assert.match(body.text,/转述和现代类比的支持范围仍需审阅/);assert.doesNotMatch(body.text,/全部正确|所有主张已证实/);assert.equal(body.children[0].children.at(-1).textContent,'<img src=x onerror=alert(1)> · 转述仍需人工审阅');
 '''
         result = subprocess.run(['node', '-e', code], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)

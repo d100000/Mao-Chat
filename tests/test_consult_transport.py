@@ -89,8 +89,10 @@ class ConsultTransportTests(unittest.TestCase):
             status, _, _ = self.request('/api/agent/stream', {'question': '纠正一下，我不想换工作，只想减少无效加班', 'thread_id': 'goal'}, cookie)
             self.assertEqual(status, 200)
             self.assertEqual(requests[1]['history'][0]['content'], '我最近很迷茫')
-            self.assertEqual([x['role'] for x in requests[1]['history']], ['user', 'assistant', 'assistant'])
-            self.assertIn('未经用户确认', requests[1]['history'][-1]['content'])
+            self.assertEqual([x['role'] for x in requests[1]['history'][:2]], ['user', 'assistant'])
+            notes=requests[1]['history'][2:]
+            self.assertTrue(notes and all(x['role']=='assistant' for x in notes))
+            self.assertTrue(any('未经用户确认' in x['content'] for x in notes))
             self.assertNotIn('phase', json.dumps([x for x in requests[1]['history'] if x['role'] == 'user'], ensure_ascii=False))
         status, _, _ = self.request('/api/agent/stream', {'question': '切换研究', 'mode': 'research', 'thread_id': 'goal'}, cookie)
         self.assertEqual(status, 409)
@@ -111,8 +113,9 @@ class ConsultTransportTests(unittest.TestCase):
             goal = first_goal
             # A local stand-in reads exactly the public context sent by HTTP.
             # The actual current user turn must take precedence over that note.
-            if history and history[-1]['content'].startswith('【上一轮助手的暂定理解'):
-                goal = json.loads(history[-1]['content'].rsplit('\n', 1)[1])['goal']
+            summary=next((x for x in reversed(history or []) if x['content'].startswith('【上一轮助手的暂定理解')),None)
+            if summary:
+                goal = json.loads(summary['content'].rsplit('\n', 1)[1])['goal']
             if question.startswith('第5轮纠正'):
                 goal = corrected_goal
             if question.startswith('本轮再纠正'):
@@ -132,8 +135,9 @@ class ConsultTransportTests(unittest.TestCase):
             self.assertFalse(any('第5轮纠正' in x['content'] for x in history if x['role'] == 'user'))
             self.assertIn(first_goal, history[0]['content'])
             self.assertEqual(history[-1]['role'], 'assistant')
-            self.assertEqual(json.loads(history[-1]['content'].rsplit('\n', 1)[1])['goal'], corrected_goal)
-            self.assertIn('本轮用户最新补充和纠正优先', history[-1]['content'])
+            summary=next(x for x in history if x['content'].startswith('【上一轮助手的暂定理解'))
+            self.assertEqual(json.loads(summary['content'].rsplit('\n', 1)[1])['goal'], corrected_goal)
+            self.assertIn('本轮用户最新补充和纠正优先', summary['content'])
             self.assertLessEqual(sum(len(x['content']) for x in history), MAX_HISTORY_CHARS)
 
             current_question = '本轮再纠正：' + newest_goal

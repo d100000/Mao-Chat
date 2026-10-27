@@ -86,3 +86,13 @@ npm run test:live:product
 ```
 
 该命令明确启用真实服务调用，验证只想倾诉、区分长期方向与阶段目标、建议仅为待确认、用户采纳后缩短回答不改变状态，以及显式旧议题记忆、临时会话、反馈、导出和删除。报告与有限场景的真实回复存入被 Git 忽略的 `tmp/live-product-check/`，不提交账户或完整对话。
+
+## 方案补齐回归
+
+`npm run test:ui:plan` 验证来源确认、更正失败保输入、停用不复活、按轮次自愿反馈、案例与主张检查的边界，以及移动端就近理解和已采纳步骤。它使用隔离数据库和明确的模型替身。
+
+`npm run test:live:plan` 明确调用真实服务，验证原话来源、界面更正与停用、伪引语核对、紧迫安全与专业回应边界。原始回答留在被忽略的 `tmp/plan-live/`；有限场景仍需人工审阅。
+
+`tests/product_regression.json` 含60段、240轮合成回归材料。默认单测只校验材料结构，不会自动调用240轮真实模型；评分及真人试用应按 `pilot-study.md` 的双重审阅流程另行记录。
+
+真实方案验收可用 `python3 scripts/live_plan_check.py --run --case source --output tmp/plan-source/report.json` 分开执行 `traceable`、`source`、`support` 或 `professional`。为每次尝试指定不同输出位置以保留失败样本；报告包含运行ID和完成状态，启动失败也会替换该位置的旧成功结果。供应商超时不算通过。

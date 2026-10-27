@@ -56,7 +56,7 @@ def make_live_server(port=0, state_dir=None):
         conn.execute('PRAGMA foreign_keys=OFF')
         for table in ('auth_sessions', 'admin_sessions', 'captcha_challenges',
                       'auth_audit', 'auth_rate_limits', 'users', 'admins',
-                      'citations', 'messages', 'llm_runs', 'sessions', 'web_sources', 'issue_state'):
+                      'citations', 'messages', 'llm_runs', 'sessions', 'web_sources', 'issue_state', 'issue_feedback', 'quality_runs'):
             if conn.execute('SELECT 1 FROM sqlite_master WHERE name=?', (table,)).fetchone():
                 conn.execute('DELETE FROM ' + table)
         if conn.execute("SELECT 1 FROM sqlite_master WHERE name='app_settings'").fetchone():

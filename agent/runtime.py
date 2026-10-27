@@ -25,12 +25,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional
 
+from .claims import check_answer_claims, check_direct_quote, retains_rejected_quote
+from .support import support_instruction
+from .telemetry import audit_metadata, ensure_telemetry_scope, record_stage
 from .firecrawl import FirecrawlClient, FirecrawlConfig
 from .llm import LLMConfig, LLMError, LLMResponse, OpenAICompatibleClient, parse_json_object
 from .vector import search_vectors
 from .dialogue import (CONSULT_RULES, UNDERSTANDING_PARAMETERS, CuratedMethodLibrary,
                        answer_format_limits, final_review_message, format_repair_message,
-                       format_violations, understanding)
+                       format_violations, quote_repair_message, understanding)
 from .db import connect as db_connect, ensure_schema, record_citations, record_llm_run, record_message, record_session
 
 
@@ -546,7 +549,7 @@ class Agent:
     def _result_rows(result: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not isinstance(result, dict):
             return []
-        return [row for key in ('results', 'method_notes', 'principles')
+        return [row for key in ('results', 'method_notes', 'principles', 'cases')
                 for row in (result.get(key) if isinstance(result.get(key), list) else [])
                 if isinstance(row, dict)]
 
@@ -558,7 +561,7 @@ class Agent:
             rows = Agent._result_rows(result)
             for row in rows:
                 if isinstance(row, dict):
-                    keys = ('event_id',) if row.get('record_type') == 'historical_event' else ("evidence_id", "id", "quote_id", "event_id", "rule_id", "principle_id", "anchor")
+                    keys = ('case_id',) if row.get('record_type') == 'historical_case' else ('event_id',) if row.get('record_type') == 'historical_event' else ("evidence_id", "id", "quote_id", "event_id", "rule_id", "principle_id", "anchor")
                     for key in keys:
                         if row.get(key):
                             ids.add(str(row[key])); break
@@ -574,6 +577,7 @@ class Agent:
             "event_id": "event",
             "rule_id": "rule",
             "principle_id": "principle",
+            "case_id": "case",
         }
         for item in tools:
             result = item.get("result") or {}
@@ -582,6 +586,8 @@ class Agent:
                 if not isinstance(row, dict):
                     continue
                 for key, prefix in prefixes.items():
+                    if row.get('record_type') == 'historical_case' and key != 'case_id':
+                        continue
                     if row.get('record_type') == 'historical_event' and key != 'event_id':
                         # An event's linked evidence card is not automatically
                         # a separately verified author quotation/source.
@@ -614,7 +620,7 @@ class Agent:
                 aliases = set(Agent._evidence_markers([{'result': {'results': [row]}}]))
                 if not cited.intersection(aliases):
                     continue
-                keys = ('event_id',) if row.get('record_type') == 'historical_event' else (
+                keys = ('case_id',) if row.get('record_type') == 'historical_case' else ('event_id',) if row.get('record_type') == 'historical_event' else (
                     'evidence_id', 'id', 'quote_id', 'event_id', 'rule_id', 'principle_id', 'anchor')
                 canonical = next((str(row[key]) for key in keys if row.get(key)), None)
                 if canonical:
@@ -649,7 +655,7 @@ class Agent:
             for row in rows:
                 if not isinstance(row, dict):
                     continue
-                keys = ('event_id',) if row.get('record_type') == 'historical_event' else ("evidence_id", "id", "quote_id", "event_id", "rule_id", "principle_id")
+                keys = ('case_id',) if row.get('record_type') == 'historical_case' else ('event_id',) if row.get('record_type') == 'historical_event' else ("evidence_id", "id", "quote_id", "event_id", "rule_id", "principle_id")
                 evidence_id = next((str(row[k]) for k in keys if row.get(k)), None)
                 source_id = row.get("source_id")
                 pdf_page = row.get("pdf_page")
@@ -739,9 +745,12 @@ class Agent:
                         conn.execute('DELETE FROM citations WHERE message_id=?', (msg_id,))
                         record_citations(conn, msg_id, citations)
                 prompt_hash = hashlib.sha256((question + "\n" + (content or "")).encode("utf-8")).hexdigest()
+                audit = audit_metadata(self.config, tools)
+                usage = audit.get('usage', {})
                 record_llm_run(conn, sid, self.config.llm.provider, self.config.llm.model, mode, prompt_hash,
-                               int(elapsed_s * 1000), status, error=error,
-                               metadata={"tool_names": [x.get("name") for x in tools], "evidence_ids": ids,
+                               int(elapsed_s * 1000), status, input_tokens=usage.get("input_tokens"),
+                               output_tokens=usage.get("output_tokens"), error=error,
+                               metadata={**audit, "tool_names": [x.get("name") for x in tools], "evidence_ids": ids,
                                          "retrieved_evidence_ids": self._evidence_ids(tools)})
             conn.close()
         except Exception:
@@ -779,7 +788,9 @@ class Agent:
         tool_results: List[Dict[str, Any]] = []
         current_understanding = None
         reviewing_final = False
-        format_repaired = False
+        repair_used = False
+        rejected_quotes = []
+        urgent_mode = False
         format_limits = answer_format_limits(question) if mode == 'consult' else {}
         candidate_seen = False
         # The model may omit optional tool arguments.  The user-selected mode
@@ -794,12 +805,14 @@ class Agent:
             handlers["trace_quote"] = (lambda text, limit=8: quote_handler(text, as_of_current, limit)) if quote_handler else handlers["trace_quote"]
             handlers["trace_event"] = (lambda text, limit=8: event_handler(text, as_of_current, limit)) if event_handler else handlers["trace_event"]
         messages = self._messages(question, mode, as_of, history)
+        user_texts = [message['content'] for message in messages
+                      if message.get('role') == 'user' and isinstance(message.get('content'), str)]
         for step in range(self.config.max_steps):
             # Consume SSE directly so the CLI can render answer tokens while
             # the provider is still generating.  Mock/simple clients may only
             # implement chat(), in which case we retain a compatibility path.
             content_parts: List[str] = []
-            call_tools = None if reviewing_final else tools
+            call_tools = None if reviewing_final or urgent_mode else tools
             if hasattr(self.client, "stream_chat"):
                 content_parts, reasoning_parts, tool_deltas, raw = [], [], [], {}
                 for event in self.client.stream_chat(messages, tools=call_tools):
@@ -820,10 +833,10 @@ class Agent:
                     yield {"type": "reasoning", "text": response.reasoning, "step": step + 1}
                 content_parts = [response.content] if response.content else []
             if response.tool_calls:
-                if reviewing_final:
+                if reviewing_final or urgent_mode:
                     # A non-compliant provider must not execute a tool or
                     # mutate the already published understanding in review.
-                    yield {"type": "error", "error": "最终复核阶段不允许工具调用，未发布草稿。"}
+                    yield {"type": "error", "error": "最终复核阶段不允许工具调用，未发布草稿。" if reviewing_final else "现实安全支持阶段不调用资料工具，本轮未发布，请重试。"}
                     return
                 assistant = {"role": "assistant", "content": response.content or None, "tool_calls": response.tool_calls}
                 messages.append(assistant)
@@ -834,27 +847,38 @@ class Agent:
                         args = json.loads(fn.get("arguments") or "{}")
                     except json.JSONDecodeError:
                         args = {}
-                    if name not in handlers:
+                    tool_started = time.monotonic()
+                    if mode == 'consult' and current_understanding is None and name != 'understand_user':
+                        result = {'blocked': True, 'results': [], 'notice': '请先调用understand_user明确本轮需要，未执行检索或网页请求。'}
+                    elif urgent_mode:
+                        result = {'blocked': True, 'results': [], 'notice': '本轮现实安全支持不执行史料或网页工具。'}
+                    elif name not in handlers:
                         result = {"error": "unknown tool", "tool": name}
                     else:
                         try:
                             result = handlers[name](**args)
                         except Exception as exc:
                             result = {"error": str(exc), "tool": name}
+                    record_stage("tool:" + name, (time.monotonic() - tool_started) * 1000)
                     result["_tool_data"] = True
                     tool_results.append({"name": name, "result": result})
                     if mode == 'consult' and name == 'understand_user' and isinstance(result.get('analysis'), dict):
                         current_understanding = result['analysis']
+                        if current_understanding.get('support_mode') == 'urgent_safety':
+                            urgent_mode = True
+                            format_limits = {}  # Immediate support must not disappear behind an impossible size request.
                         yield {"type": "analysis", "analysis": current_understanding, "step": step + 1}
                     candidate_seen = candidate_seen or result.get("status") == "candidate_page_match"
                     yield {"type": "tool", "name": name, "result": result, "step": step + 1}
                     messages.append({"role": "tool", "tool_call_id": call.get("id", uuid.uuid4().hex), "name": name, "content": json.dumps(result, ensure_ascii=False)})
+                if urgent_mode:
+                    messages.append({'role': 'system', 'content': support_instruction('urgent_safety')})
                 continue
             if mode == 'consult':
                 if current_understanding is None:
                     messages.append({"role": "system", "content": "在给最终答复前，先调用 understand_user：只整理用户明确说过的事实和目标，缺失项作为未知；不要直接猜测其人生处境。随后自然回应。"})
                     continue
-                if current_understanding['phase'] in {'analyze', 'review'} and not any(x.get('name') == 'method_search' for x in tool_results):
+                if current_understanding['phase'] in {'analyze', 'review'} and current_understanding.get('support_mode') != 'professional' and current_understanding.get('intent') != 'source' and not any(x.get('name') == 'method_search' for x in tool_results):
                     messages.append({"role": "system", "content": "本轮准备作分析或复盘，必须先调用 method_search 查可核史料与方法条件，然后才给现代建议；查无资料就明确缺口，不能编造原话或历史故事。"})
                     continue
                 if not response.content or not response.content.strip():
@@ -870,16 +894,19 @@ class Agent:
                     yield {"type": "status", "text": "正在核对你的情况、待确认事项与建议…", "step": step + 1}
                     continue
                 if format_violations(response.content, format_limits):
-                    if format_repaired or step + 1 >= self.config.max_steps:
+                    if repair_used or step + 1 >= self.config.max_steps:
                         yield {'type': 'error', 'error': '答复未满足本轮字数或句数要求，未发布，请重试或调整表达要求。'}
                         return
                     # Only explicit size requests can add this one bounded
                     # format-only call. Ordinary answers keep the same budget.
                     messages.append({'role': 'assistant', 'content': response.content})
                     messages.append({'role': 'system', 'content': format_repair_message(format_limits)})
-                    format_repaired = True
+                    repair_used = True
                     yield {'type': 'status', 'text': '正在按你要求压缩表达…', 'step': step + 1}
                     continue
+                if urgent_mode and self._content_evidence_markers(response.content):
+                    yield {'type': 'error', 'error': '现实安全支持不使用历史引用，本轮未发布不合适的答复，请重试。'}
+                    return
                 unknown = sorted(set(self._content_evidence_markers(response.content)) - set(self._evidence_markers(tool_results)))
                 if unknown:
                     # Resolve only real IDs in the curated database, once,
@@ -896,7 +923,7 @@ class Agent:
                 gate['consult_grounded'] = bool(author_rows)
                 gate['consult_quote_eligible'] = any(row.get('quote_eligible') is True for row in author_rows)
                 gate['consult_event_context'] = any(row.get('record_type') == 'historical_event' for row in method_rows)
-                if current_understanding['phase'] in {'analyze', 'review'} and not author_rows:
+                if current_understanding['phase'] in {'analyze', 'review'} and current_understanding.get('support_mode') != 'professional' and current_understanding.get('intent') != 'source' and not author_rows:
                     gated = '史料缺口：本轮未检索到直接相关的已核资料。以下只能作为现代建议，不作为历史结论。\n\n' + gated
                     gate['modified'] = True
                 if format_violations(gated, format_limits):
@@ -904,6 +931,27 @@ class Agent:
                     # answer fits a tight length budget.
                     yield {'type': 'error', 'error': '引用提示与本轮表达要求无法同时满足，未发布答复，请重试或放宽篇幅。'}
                     return
+            claim_checks = check_answer_claims(response.content or '', tool_results, mode, as_of, user_texts=user_texts)
+            if rejected_quotes and claim_checks['passed'] and retains_rejected_quote(response.content or '', rejected_quotes):
+                yield {'type': 'error', 'error': '无法把未核引语改写成确定转述，本轮未发布。请保留资料缺口后重试。'}
+                return
+            if not claim_checks['passed']:
+                if (not urgent_mode and not repair_used and step + 1 < self.config.max_steps
+                        and not any(item.get('status') == 'check_limit_reached' for item in claim_checks['quote_checks'])):
+                    # The same single repair budget serves formatting and
+                    # quotation quality; never start another tool/review loop.
+                    messages.append({'role': 'assistant', 'content': response.content})
+                    messages.append({'role': 'system', 'content': quote_repair_message(
+                        format_limits, (current_understanding or {}).get('intent', 'auto'))})
+                    repair_used = True
+                    rejected_quotes = [item.get('text', '') for item in claim_checks['quote_checks']
+                                       if item.get('status') != 'matched_excerpt' and isinstance(item.get('text'), str)]
+                    reviewing_final = True
+                    yield {'type': 'status', 'text': '正在核对引语资格并收紧回答范围…', 'step': step + 1}
+                    continue
+                yield {'type': 'error', 'error': '历史直接引语未通过逐字或日期资格核对，本轮未发布。请改为转述或核对出处后重试。'}
+                return
+            gate['claim_checks'] = claim_checks
             if response.content:
                 # Buffer the complete assistant turn until tool calls are
                 # known. This prevents a candidate result arriving later from
@@ -920,17 +968,25 @@ class Agent:
                         yield event
             # Non-stream providers may include their entire review reasoning
             # in raw choices; do not expose the private review via done either.
-            yield {"type": "answer_meta", "used_evidence_ids": self.used_evidence_ids(gated, tool_results)}
+            yield {"type": "answer_meta", "used_evidence_ids": self.used_evidence_ids(gated, tool_results), "claim_checks": claim_checks}
             yield {"type": "done", "steps": step + 1, "raw": {} if reviewing_final else response.raw}
             return
         yield {"type": "error", "error": "达到工具调用步数上限，未得到最终回答。"}
 
     def ask(self, question: str, mode="research", as_of=None, history=None, show_reasoning=False,
             session_id=None, network_enabled=True) -> Dict[str, Any]:
+        # CLI/direct calls need the same measurement lifetime as HTTP, while
+        # callers that already own a scope keep their accumulated observations.
+        with ensure_telemetry_scope():
+            return self._ask(question, mode, as_of, history, show_reasoning, session_id, network_enabled)
+
+    def _ask(self, question: str, mode="research", as_of=None, history=None, show_reasoning=False,
+             session_id=None, network_enabled=True) -> Dict[str, Any]:
         started = time.monotonic()
         content, reasoning, tools = [], [], []
         analysis = None
         used_evidence_ids = None
+        claim_checks = None
         stream_gate = None
         for event in self.stream(question, mode, as_of, history, show_reasoning, network_enabled):
             if event["type"] == "content":
@@ -945,6 +1001,7 @@ class Agent:
                 analysis = event.get('analysis')
             elif event['type'] == 'answer_meta':
                 used_evidence_ids = event.get('used_evidence_ids')
+                claim_checks = event.get('claim_checks')
             elif event["type"] == "error":
                 self._persist_run(question, mode, as_of, "", tools, time.monotonic() - started, "error", session_id, event.get("error"))
                 return {"ok": False, "error": event["error"], "content": "", "reasoning": "", "tools": tools, "analysis": analysis}
@@ -972,7 +1029,11 @@ class Agent:
             final_content, gate = self._apply_evidence_gate("".join(content), tools, mode, as_of)
         self._persist_run(question, mode, as_of, final_content, tools, time.monotonic() - started, "ok", session_id)
         return {"ok": True, "content": final_content, "reasoning": "".join(reasoning), "tools": compact_tools, "mode": mode, "as_of": as_of, "evidence_gate": gate, "analysis": analysis,
-                "used_evidence_ids": used_evidence_ids if isinstance(used_evidence_ids, list) else self.used_evidence_ids(final_content, tools)}
+                "used_evidence_ids": used_evidence_ids if isinstance(used_evidence_ids, list) else self.used_evidence_ids(final_content, tools),
+                "claim_checks": claim_checks if isinstance(claim_checks, dict) else check_answer_claims(
+                    final_content, tools, mode, as_of,
+                    user_texts=[question] + [item.get('content') for item in history or []
+                                             if isinstance(item, dict) and item.get('role') == 'user' and isinstance(item.get('content'), str)])}
 
     def structured_draft(self, question: str, mode="research", as_of=None, evidence=None) -> Dict[str, Any]:
         """Ask for a machine-checkable draft; retry JSON formatting once only."""
@@ -1003,6 +1064,11 @@ class Agent:
                         raise LLMError("草稿claim证据ID格式无效")
                     if not claim["evidence_ids"] or not allowed_ids or not set(claim["evidence_ids"]).issubset(allowed_ids):
                         raise LLMError("草稿claim引用了未提供的证据")
+                    if claim['kind'] == 'quote':
+                        rows = [item for item in evidence or [] if isinstance(item, dict)]
+                        quote_check = check_direct_quote(claim['text'], claim['evidence_ids'], [{'result': {'results': rows}}], mode, as_of)
+                        if quote_check['status'] != 'matched_excerpt':
+                            raise LLMError('草稿直接引语未通过逐字或日期资格核对')
                 return {"draft": draft, "reasoning": response.reasoning, "attempts": attempt + 1}
             except LLMError as exc:
                 last = exc

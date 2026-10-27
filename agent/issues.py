@@ -16,6 +16,9 @@ import threading
 import uuid
 
 from .dialogue import UNDERSTANDING_PARAMETERS
+from .statements import (add_turn, effective_analysis, prompt_statement_context,
+                         public_changes, public_statements, statement_sources,
+                         update_statement)
 
 
 ISSUE_SCHEMA = '''
@@ -45,6 +48,9 @@ PUBLIC_ROW_KEYS = {
     'source_urls', 'quotation_scope', 'review_scope', 'content_qualification',
     'evidence_ids', 'dimension', 'author_claim', 'research_interpretation',
     'modern_application', 'historical_conditions', 'unsupported_extensions',
+    'case_id', 'facts', 'outcome_evidence', 'unknowns', 'modern_analogy',
+    'non_analogies', 'source_ids', 'completion', 'supporting_evidence_ids',
+    'source_fingerprint', 'problem_context', 'resource_conditions',
     'untrusted', 'status', 'text', 'markdown',
 }
 
@@ -67,7 +73,7 @@ def public_tools(value):
             continue
         result = {}
         for key, data in item['result'].items():
-            if key in {'results','method_notes','principles','checks'} and isinstance(data, list):
+            if key in {'results','method_notes','principles','cases','checks'} and isinstance(data, list):
                 result[key] = [_public_value(x) for x in data[:8] if isinstance(x, dict)]
             elif key in {'query','status','notice','history_gap','grounding_notice','untrusted','error'}:
                 result[key] = _public_value(data)
@@ -118,7 +124,7 @@ def proposal(value):
 def public_analysis(value):
     if not isinstance(value, dict):
         return None
-    allowed = set(UNDERSTANDING_PARAMETERS['properties']) | {'tentative', 'basis'}
+    allowed = set(UNDERSTANDING_PARAMETERS['properties']) | {'tentative', 'basis', 'statement_sources'}
     output = {}
     for key in allowed:
         if key not in value:
@@ -126,6 +132,8 @@ def public_analysis(value):
         item = value[key]
         if key == 'proposed_action':
             output[key] = proposal(item)
+        elif key == 'statement_sources':
+            output[key] = statement_sources(item)
         elif key == 'tentative':
             output[key] = True
         elif isinstance(item, str):
@@ -134,6 +142,28 @@ def public_analysis(value):
             output[key] = [x[:240] for x in item[:6] if isinstance(x, str)]
         elif item is None:
             output[key] = None
+    return output
+
+
+def public_claim_checks(value):
+    if not isinstance(value, dict):
+        return None
+    output = {}
+    for key in ('claims', 'quote_checks'):
+        rows = []
+        for item in value.get(key, [])[:24] if isinstance(value.get(key), list) else []:
+            if not isinstance(item, dict):
+                continue
+            row = {field: item[field][:600 if field in {'text','quote'} else 240]
+                   for field in ('text','kind','quote','status','notice') if isinstance(item.get(field), str)}
+            row['evidence_ids'] = [x[:160] for x in item.get('evidence_ids', [])[:6] if isinstance(x, str)] if isinstance(item.get('evidence_ids'), list) else []
+            rows.append(row)
+        output[key] = rows
+    if isinstance(value.get('scope'), str):
+        output['scope'] = value['scope'][:600]
+    if isinstance(value.get('coverage'), str):
+        output['coverage'] = value['coverage'][:600]
+    output['passed'] = value.get('passed') is True
     return output
 
 
@@ -146,6 +176,14 @@ def public_metadata(value):
     for key in ('title', 'updated_at'):
         if isinstance(value.get(key), str):
             output[key] = value[key][:240]
+    if isinstance(value.get('latest_turn_id'), str):
+        output['latest_turn_id'] = value['latest_turn_id'][:64]
+    output['statements'] = public_statements(value.get('statements'))
+    output['goal_history'] = public_changes(value.get('goal_history'), 'goal')
+    output['review_history'] = public_changes(value.get('review_history'), 'review')
+    checks = public_claim_checks(value.get('claim_checks'))
+    if checks is not None:
+        output['claim_checks'] = checks
     output['archived'] = value.get('archived') is True
     output['remember'] = value.get('remember') is True
     actions = []
@@ -177,6 +215,8 @@ def public_metadata(value):
     for item in value.get('used_memories', [])[:3] if isinstance(value.get('used_memories'), list) else []:
         if isinstance(item, dict) and isinstance(item.get('thread_id'), str):
             output['used_memories'].append({'thread_id': item['thread_id'][:65], 'title': str(item.get('title', ''))[:100]})
+    if 'analysis' in output:
+        output['analysis'] = effective_analysis(output)
     return output
 
 
@@ -318,14 +358,24 @@ class IssueStore:
             # User-controlled title/archive/memory/actions win over the
             # snapshot captured before a potentially long model call.
             merged = public_metadata(current)
-            for key in ('mode', 'as_of', 'analysis', 'used_evidence_ids', 'used_memories'):
+            for key in ('mode', 'as_of', 'used_evidence_ids', 'used_memories', 'claim_checks'):
                 if key in metadata:
                     merged[key] = metadata[key]
             if not merged.get('title'):
                 merged['title'] = question[:60]
             turn = uuid.uuid4().hex
-            analysis = public_analysis(merged.get('analysis'))
-            merged['analysis'] = analysis
+            merged['latest_turn_id'] = turn
+            analysis = public_analysis(metadata.get('analysis'))
+            if analysis is not None:
+                analysis = add_turn(merged, analysis, question, turn, now())
+            else:
+                merged['analysis'] = None
+            if (len(messages) >= 2 and messages[-2].get('role') == 'user'
+                    and messages[-2].get('content') == question and messages[-1].get('role') == 'assistant'):
+                messages[-2]['turn_id'] = turn
+                messages[-1]['turn_id'] = turn
+            elif messages and messages[-1].get('role') == 'user' and messages[-1].get('content') == question:
+                messages[-1]['turn_id'] = turn
             history = merged.get('understanding_history', [])
             if analysis is not None and (not history or history[-1].get('analysis') != analysis):
                 history.append({'analysis': analysis, 'source_turn_id': turn, 'question': question[:4000], 'updated_at': now(), 'tentative': True})
@@ -379,7 +429,8 @@ class IssueStore:
             return {'sessions': sessions, 'total': total, 'limit': limit, 'offset': offset}
 
     def update(self, user_id, tid, agent, changes):
-        allowed = {'title', 'archived', 'remember', 'action_id', 'action_status', 'action_feedback'}
+        allowed = {'title', 'archived', 'remember', 'action_id', 'action_status', 'action_feedback',
+                   'statement_id', 'statement_status', 'corrected_value'}
         if not isinstance(changes, dict) or set(changes) - allowed or not changes:
             raise IssueError('议题更新字段无效')
         with self.lock:
@@ -393,6 +444,14 @@ class IssueStore:
                 if key in changes:
                     if not isinstance(changes[key], bool): raise IssueError(key + '必须为布尔值')
                     meta[key] = changes[key]
+            if any(key in changes for key in ('statement_id', 'statement_status', 'corrected_value')):
+                identity = _text(changes.get('statement_id'), 64, '理解记录ID', empty=False)
+                if 'statement_status' not in changes and 'corrected_value' not in changes:
+                    raise IssueError('请选择确认、停用或更正理解记录')
+                try:
+                    update_statement(meta, identity, changes.get('statement_status'), changes.get('corrected_value'), timestamp=now())
+                except ValueError as exc:
+                    raise IssueError(str(exc), 404 if str(exc) == '理解记录不存在' else 400) from exc
             if any(key.startswith('action_') for key in changes):
                 aid = _text(changes.get('action_id'), 64, '行动ID', empty=False)
                 action = next((x for x in meta['actions'] if x['id'] == aid), None)
@@ -409,6 +468,15 @@ class IssueStore:
                 if 'action_feedback' in changes:
                     action['feedback'] = _text(changes['action_feedback'], 2000, '行动反馈')
                 action['updated_at'] = now()
+                if 'action_feedback' in changes and action.get('feedback'):
+                    reviews = public_changes(meta.get('review_history'), 'review')
+                    reviews.append({'review_id': uuid.uuid4().hex, 'kind': 'action_feedback',
+                                    'source_turn_id': meta.get('latest_turn_id', ''),
+                                    'recorded_at': now(), 'previous_summary': '', 'current_summary': '',
+                                    'feedback': action['feedback'], 'action_id': action['id'],
+                                    'action_status': action['status'],
+                                    'notice': '用户手动报告的反馈；行动状态仅反映用户本次选择。'})
+                    meta['review_history'] = reviews[-12:]
             # Metadata edits must not run save_session's transcript replace:
             # replacing messages would discard their citation audit rows.
             path = self._path(user_id, tid)
@@ -450,6 +518,9 @@ class IssueStore:
                 conn.execute('DELETE FROM messages WHERE session_id=?', (sid,))
                 conn.execute('DELETE FROM llm_runs WHERE session_id=?', (sid,))
                 conn.execute('DELETE FROM sessions WHERE session_id=?', (sid,))
+                for table in ('issue_feedback', 'quality_runs'):
+                    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+                        conn.execute('DELETE FROM ' + table + ' WHERE user_id=? AND thread_id=?', (int(user_id), tid))
             self.active_streams.pop((int(user_id), tid), None)
             self._path(user_id, tid).unlink(missing_ok=True)
 
@@ -460,7 +531,10 @@ class IssueStore:
         messages = []
         for item in snapshot['messages']:
             if isinstance(item, dict) and item.get('role') in {'user','assistant'}:
-                messages.append({'role': item['role'], 'content': str(item.get('content', ''))[:12000]})
+                exported = {'role': item['role'], 'content': str(item.get('content', ''))[:12000]}
+                if isinstance(item.get('turn_id'), str):
+                    exported['turn_id'] = item['turn_id'][:64]
+                messages.append(exported)
         return {'thread_id': tid, 'exported_at': now(), 'messages': messages, 'metadata': snapshot['metadata'], 'tools': snapshot['tools']}
 
     def memory(self, user_id, ids, agent):
@@ -473,6 +547,6 @@ class IssueStore:
             meta = snapshot['metadata']
             if not snapshot['exists'] or meta.get('remember') is not True:
                 raise IssueError('记忆议题不存在或未授权', 404)
-            result.append({'thread_id': tid, 'title': meta.get('title',''), 'analysis': meta.get('analysis'),
-                           'actions': meta.get('actions', [])})
+            result.append({'thread_id': tid, 'title': meta.get('title',''), 'analysis': effective_analysis(meta),
+                           'actions': meta.get('actions', []), 'statements': prompt_statement_context(meta)})
         return result

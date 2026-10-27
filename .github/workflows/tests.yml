@@ -25,6 +25,9 @@ jobs:
       - run: npm run test:ui
         env:
           E2E_BROWSER_CHANNEL: bundled
+      - run: npm run test:ui:plan
+        env:
+          E2E_BROWSER_CHANNEL: bundled
       - run: npm run test:ui:legacy
         env:
           E2E_BROWSER_CHANNEL: bundled

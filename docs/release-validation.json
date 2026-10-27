@@ -1,38 +1,34 @@
 {
   "date": "2026-10-27",
-  "scope": "教员：本轮核心产品优化与公开源码发布",
+  "scope": "教员产品方案 P0/P1补齐与验证",
+  "base_commit": "8e5a362b2241fd0a0fdd3607110b26e5d6e83838",
   "implemented": [
-    "倾听与可纠正的三层目标",
-    "12个有出处且保留历史边界的思想解释维度",
-    "标准引用及实际采用来源",
-    "用户确认的行动状态与反馈",
-    "议题管理、显式跨议题记忆、临时对话",
-    "停止、删除与旧流并发隔离",
-    "可独立初始化的公开资料库"
+    "原话级来源与暂定、确认、更正、停用及取代记录",
+    "目标和复盘变化；停用字段及无来源同义改写不复活",
+    "正常答复的主张清单、逐字引语/时点核对及一次有界修复",
+    "10个稳定案例定义中9个有限已核事实参照；独立结果证据保持空缺",
+    "按答复轮次的自愿反馈与导出删除隔离",
+    "手机就近理解与已采纳下一步",
+    "现实安全及专业问题路由，不强制历史说教或假装联络",
+    "代码、提示词、知识、来源指纹、真实用量及延迟观测；后台只读聚合"
   ],
   "unit_tests": {
-    "total": 188,
-    "passed": 188,
+    "total": 248,
+    "passed": 248,
     "skipped": 0,
     "failures": 0,
     "errors": 0
   },
   "public_checkout": {
-    "bootstrap": {
-      "profile": "curated",
-      "evidence_cards": 37,
-      "events": 10,
-      "quotes": 25,
-      "philosophy_rules": 13
-    },
     "unit_tests": {
-      "total": 188,
-      "passed": 180,
+      "total": 248,
+      "passed": 240,
       "skipped": 8,
       "failures": 0,
       "errors": 0
     },
-    "skip_reason": "可选本地完整PDF/OCR集成；公开仓库不含这些资产",
+    "skip_reason": "8项可选本地完整PDF/OCR集成，公开源码不含这些资产",
+    "bootstrap": "37条核验卡、25条语录、10条登记事件和13条方法规则，独立初始化通过",
     "npm_ci": "passed",
     "python_compileall": "passed"
   },
@@ -55,6 +51,21 @@
         "mobile notes drawers and compact research menu",
         "deleting an issue clears server state memory and local cache",
         "account isolation and logout have no uncaught browser errors"
+      ]
+    },
+    {
+      "script": "tests/e2e/plan.mjs",
+      "provider": "deterministic-test-double",
+      "passed": 7,
+      "failed": 0,
+      "checks": [
+        "understanding exposes source excerpts without auto confirmation",
+        "confirmation is explicit and correction preserves the old version",
+        "inactive information remains inactive across a new answer and reload",
+        "answer feedback is optional attributed and does not accept an action",
+        "case and claim details preserve limited evidence boundaries",
+        "mobile conversation keeps understanding and accepted next step nearby",
+        "temporary answers do not submit or advertise persistent feedback"
       ]
     },
     {
@@ -85,50 +96,67 @@
   ],
   "real_provider_acceptance": {
     "model": "deepseek-v4.1-flash",
-    "legacy_model_and_firecrawl": {
-      "passed": 8,
+    "provider": "live-openai-compatible",
+    "base_product": {
+      "passed": 7,
       "failed": 0
     },
-    "new_product": {
-      "passed": 7,
+    "plan_paths": {
+      "passed": 5,
       "failed": 0,
       "checks": [
-        "real listening respects a request not to assign an action",
-        "real advice separates goals and creates only a proposal",
-        "user explicitly accepts the action",
-        "shortening a reply preserves the stage goal and user action state",
-        "user authorizes the issue as a memory",
-        "authorized memory supports a temporary real conversation without a saved transcript",
-        "action feedback export and deletion remain controlled by the user"
+        {
+          "name": "real understanding keeps exact user sources",
+          "status": "passed"
+        },
+        {
+          "name": "real follow-up respects correction exclusion and optional feedback",
+          "status": "passed"
+        },
+        {
+          "name": "real source inquiry does not authenticate an invented quotation",
+          "status": "passed"
+        },
+        {
+          "name": "real urgent response prioritizes support without historical tools",
+          "status": "passed"
+        },
+        {
+          "name": "real professional response states its capability boundary",
+          "status": "passed"
+        }
       ]
     },
     "manual_review": [
-      "倾听时不安排任务",
-      "阶段目标、资源约束及人数未知保持一致",
-      "350字以内分析与200字、三句话压缩符合要求",
-      "引用可独立追溯，现代类比不冒充历史原话"
+      "用户原话与历史引语分别处理，摘录无权授权伪造作者引语",
+      "界面更正后的目标保持，停用预算为未知而非恢复原限制",
+      "来源查询以本次检索范围未见、归属待核表述，不推断后人加工或历史不存在",
+      "紧迫回应不调用史料/网页工具，不生成行动卡或假称已联络；专业回应说明能力边界"
     ],
-    "answer_char_counts": {
-      "listen": 141,
-      "plan": 302,
-      "compact": 161,
-      "temporary-memory": 181
-    },
-    "raw_transcripts": "仅保存在本机忽略目录，不发布"
+    "attempt_notes": "早期尝试出现供应商read timeout，按失败保留后分场景重试；还发现并修复用户摘录误判、未核OCR引语的有界修复和过度归属推断。最终有限样例通过不代表总体语义正确或供应商稳定性。",
+    "raw_transcripts": "仅存本机忽略目录，不发布"
   },
-  "document": {
+  "evaluation_materials": {
+    "synthetic_scenarios": 60,
+    "user_turns": 240,
+    "default_validation": "只校验材料结构，不自动调用240轮真实模型或伪造评分",
+    "pilot": "已准备访谈与2至4周成人试用材料，尚未招募或开展真人试用"
+  },
+  "reference_document": {
     "path": "docs/教员产品优化方案.docx",
-    "pages_rendered_and_reviewed": 17,
-    "local_home_paths_removed": 8
+    "unchanged": true,
+    "prior_visual_review_pages": 17
   },
   "release_inventory": {
-    "files": 126,
+    "files": 146,
     "findings": 0,
-    "scope": "Git实际索引内容，包括DOCX XML；凭据、私有状态、home路径及体积检查"
+    "scope": "实际Git索引，包括DOCX XML；常见凭据、私有状态、本机路径及体积检查"
   },
   "limits": [
-    "真实模型验收为有限合成场景，不能证明所有建议的语义质量或长期陪伴效果",
-    "本轮实现核心交互，用户研究、长期效果评估与其他后续阶段仍按产品方案推进",
-    "临时对话不保存于本应用；所配置模型及启用搜索服务的数据处理由其服务安排决定"
+    "主张检查覆盖显式引用及可识别引语，不证明任意转述蕴含或现代建议有效",
+    "历史案例尚无独立结果证据，不称完整成功案例；额外内容核验与人工复核仍需继续",
+    "长期效果、100次以上的延迟基线及真人试用仍待实际开展",
+    "语音、主动回访与公开服务的运营条件按方案后续阶段验证；应用不实施联络或监护",
+    "临时对话不保存于本应用；所配置外部模型与搜索服务仍会处理发送内容"
   ]
 }

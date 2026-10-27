@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Iterator, List, Optional
 from urllib import error, request
+from .telemetry import record_model_call
 
 
 class LLMError(RuntimeError):
@@ -169,23 +170,33 @@ class OpenAICompatibleClient:
     def _request(self, payload):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = request.Request(self.config.endpoint(), data=body, method="POST")
-        req.add_header("Authorization", "Bearer " + self.config.api_key())
+        credential = self.config.api_key()
+        req.add_header("Authorization", "Bearer " + credential)
         req.add_header("Content-Type", "application/json")
         req.add_header("Accept", "text/event-stream" if payload.get("stream") else "application/json")
         try:
             return self.opener(req, timeout=self.config.timeout_s)
         except error.HTTPError as exc:
-            detail = exc.read(2000).decode("utf-8", "replace")
+            detail = exc.read(2000).decode("utf-8", "replace").replace(credential, "[redacted]")
+            detail = re.sub(r"\b(?:sk|fc)-[A-Za-z0-9_-]+", "[redacted]", detail)
             raise LLMError("LLM HTTP %s: %s" % (exc.code, detail)) from exc
         except (error.URLError, TimeoutError, OSError) as exc:
             raise LLMError("LLM 网络请求失败: " + str(exc)) from exc
 
     def stream_chat(self, messages, tools=None, response_format=None) -> Iterator[Dict[str, Any]]:
         started = time.monotonic()
-        with self._request(self._payload(messages, tools, response_format, stream=True)) as response:
-            for event in iter_sse(response):
-                event.setdefault("elapsed_s", time.monotonic() - started)
-                yield event
+        usage, status = None, 'error'
+        try:
+            with self._request(self._payload(messages, tools, response_format, stream=True)) as response:
+                for event in iter_sse(response):
+                    raw = event.get('raw') or event.get('data') or {}
+                    if isinstance(raw, dict) and isinstance(raw.get('usage'), dict):
+                        usage = raw['usage']
+                    event.setdefault("elapsed_s", time.monotonic() - started)
+                    yield event
+            status = 'ok'
+        finally:
+            record_model_call(usage, (time.monotonic() - started) * 1000, status)
 
     def chat(self, messages, tools=None, response_format=None) -> LLMResponse:
         started = time.monotonic()
@@ -201,14 +212,19 @@ class OpenAICompatibleClient:
                 elif event["type"] == "raw":
                     raw = event.get("data", {}) if isinstance(event.get("data"), dict) else raw
             return LLMResponse("".join(content), "".join(reasoning), self._merge_tool_deltas(tool_deltas), raw, time.monotonic() - started)
-        with self._request(self._payload(messages, tools, response_format, stream=False)) as response:
-            try:
-                data = json.loads(response.read().decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise LLMError("LLM 返回不是有效 JSON") from exc
-        choice = (data.get("choices") or [{}])[0]
-        message = choice.get("message") or {}
-        return LLMResponse(message.get("content") or "", message.get("reasoning_content") or message.get("reasoning") or "", message.get("tool_calls") or [], data, time.monotonic() - started)
+        data, status = {}, 'error'
+        try:
+            with self._request(self._payload(messages, tools, response_format, stream=False)) as response:
+                try:
+                    data = json.loads(response.read().decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise LLMError("LLM 返回不是有效 JSON") from exc
+            choice = (data.get("choices") or [{}])[0]
+            message = choice.get("message") or {}
+            status = 'ok'
+            return LLMResponse(message.get("content") or "", message.get("reasoning_content") or message.get("reasoning") or "", message.get("tool_calls") or [], data, time.monotonic() - started)
+        finally:
+            record_model_call(data.get('usage'), (time.monotonic() - started) * 1000, status)
 
     @staticmethod
     def _merge_tool_deltas(deltas):

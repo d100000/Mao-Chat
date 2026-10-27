@@ -192,6 +192,64 @@ class IssueStoreTests(unittest.TestCase):
         self.store.end_stream(1, 'issue', new['stream_token'])
         self.assertEqual(self.agent.load_session('u1_issue')[0]['content'], '新问题')
 
+    def test_statement_controls_are_owned_exported_and_do_not_accept_an_action(self):
+        first = self.save(a=analysis(proposed_action=action(), statement_sources=[{'field':'stage_goal','quote':'保住现有客户'}]))
+        goal = next(x for x in first['statements'] if x['field'] == 'stage_goal')
+        self.assertEqual(goal['source_excerpt'], '保住现有客户')
+        self.assertEqual(goal['confirmation'], 'tentative')
+        with self.assertRaises(IssueError):
+            self.store.update(2, 'issue', self.agent, {'statement_id':goal['statement_id'],'statement_status':'inactive'})
+        confirmed = self.store.update(1, 'issue', self.agent, {'statement_id':goal['statement_id'],'statement_status':'confirmed'})
+        self.assertEqual(confirmed['actions'][0]['status'], 'proposed')
+        corrected = self.store.update(1, 'issue', self.agent, {'statement_id':goal['statement_id'],'corrected_value':'先保证收入连续'})
+        current = next(x for x in corrected['statements'] if x['field'] == 'stage_goal' and x['status'] == 'active')
+        self.assertEqual(current['supersedes'], goal['statement_id'])
+        self.assertEqual(current['origin'], 'user_correction')
+        self.store.update(1, 'issue', self.agent, {'remember':True})
+        self.save(a=analysis(proposed_action=action()))  # Repeated stale model understanding.
+        snapshot = self.store.load(1, 'issue', self.agent)
+        self.assertEqual(snapshot['metadata']['analysis']['stage_goal'], '先保证收入连续')
+        memory = self.store.memory(1, ['issue'], self.agent)[0]
+        self.assertEqual(memory['analysis']['stage_goal'], '先保证收入连续')
+        self.assertTrue(any(x['value'] == '保住现有客户' for x in memory['statements']['excluded']))
+        exported = self.store.export(1, 'issue', self.agent)
+        self.assertEqual(exported['metadata']['latest_turn_id'], exported['messages'][-1]['turn_id'])
+        self.assertEqual(exported['messages'][-2]['turn_id'], exported['messages'][-1]['turn_id'])
+        self.assertEqual(exported['metadata']['actions'][0]['status'], 'proposed')
+        self.assertTrue(exported['metadata']['goal_history'])
+
+    def test_statement_correction_during_generation_wins_and_audit_sees_new_turn(self):
+        first = self.save(a=analysis(proposed_action=action()))
+        old_messages = self.agent.load_session('u1_issue')
+        old_turn = old_messages[-1]['turn_id']
+        goal = next(x for x in first['statements'] if x['field'] == 'stage_goal')
+        snapshot = self.store.begin_stream(1, 'issue', self.agent)
+        self.store.update(1, 'issue', self.agent, {'statement_id':goal['statement_id'],'corrected_value':'先保住健康'})
+        messages = snapshot['messages'] + [{'role':'user','content':'继续整理'}, {'role':'assistant','content':'草稿答复'}]
+        seen = []
+        result = self.store.complete_stream(1, 'issue', self.agent, messages,
+            {'mode':'consult','analysis':analysis(), 'claim_checks':{'claims':[{'text':'可审阅主张','kind':'modern_inference','evidence_ids':['VE08'],'status':'needs_review','api_key':'must-not-export'}], 'quote_checks':[], 'scope':'有限检查','coverage':'不证明转述支持范围','passed':True}},
+            '继续整理', lambda:seen.append(messages[-1].get('turn_id')), stream_token=snapshot['stream_token'])
+        self.store.end_stream(1, 'issue', snapshot['stream_token'])
+        self.assertEqual(result['analysis']['stage_goal'], '先保住健康')
+        self.assertEqual(seen, [result['latest_turn_id']])
+        saved = self.agent.load_session('u1_issue')
+        self.assertEqual(saved[-3]['turn_id'], old_turn)
+        self.assertNotEqual(saved[-1]['turn_id'], old_turn)
+        self.assertNotIn('must-not-export', json.dumps(result))
+        self.assertEqual(result['claim_checks']['coverage'], '不证明转述支持范围')
+
+    def test_delete_also_clears_feedback_and_quality_rows_only_for_the_owner(self):
+        self.save()
+        with sqlite3.connect(self.db) as conn:
+            for table in ('issue_feedback','quality_runs'):
+                conn.execute('CREATE TABLE IF NOT EXISTS '+table+' (user_id INTEGER,thread_id TEXT,private_note TEXT)')
+                conn.executemany('INSERT INTO '+table+' VALUES(?,?,?)', [(1,'issue','remove'),(2,'issue','keep-other-user'),(1,'another','keep-other-issue')])
+        self.store.delete(1, 'issue', self.agent)
+        with sqlite3.connect(self.db) as conn:
+            for table in ('issue_feedback','quality_runs'):
+                self.assertEqual(conn.execute('SELECT private_note FROM '+table+' ORDER BY private_note').fetchall(), [('keep-other-issue',),('keep-other-user',)])
+
 
 class IssuePromptTests(unittest.TestCase):
     def test_combined_history_understanding_actions_and_three_memories_share_one_budget(self):

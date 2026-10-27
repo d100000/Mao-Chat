@@ -6,11 +6,14 @@
 
 ## 核心体验
 
+- 原话摘录、用户确认与更正历史；停用的信息不会因旧摘要再次进入当前理解。
 - 倾听、澄清、分析与复盘：可选择只想说说、听一个做法或进一步查证。
 - 分开长期方向、阶段目标与本轮诉求，支持自然语言纠正。
 - 有出处的原则与方法解释，保留历史条件、适用限制及引用定位。
 - 议题继续、行动状态、用户授权的记忆与临时对话。
 - 账户隔离、议题管理、复制导出与删除；模型和 Firecrawl 配置由管理员管理。
+
+本轮实现对照见 [方案落地记录](docs/plan-implementation.md)，试用流程见 [成人试用执行材料](docs/pilot-study.md)。
 
 具体交互与边界见 [使用说明](docs/agent_usage.md)，设计依据见 [完整产品优化方案](docs/教员产品优化方案.docx)。实现采用本地资料检索、受限工具调用与回答复核；模型通过兼容 Chat Completions 的服务接入。
 
@@ -55,6 +58,8 @@ python3 -m compileall -q agent scripts tests
 npm ci
 npx playwright install chromium
 E2E_BROWSER_CHANNEL=bundled npm run test:ui
+E2E_BROWSER_CHANNEL=bundled npm run test:ui:plan
+E2E_BROWSER_CHANNEL=bundled npm run test:ui:legacy
 ```
 
 产品浏览器测试使用独立临时资料库、测试账户与确定性模型替身，不读写真实密钥。完整 OCR 集成测试在本机资产齐备时执行；公开克隆会明确跳过这部分可选集成用例。
