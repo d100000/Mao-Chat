@@ -1,0 +1,89 @@
+{
+  "date": "2026-10-25",
+  "kind": "deterministic_retrieval_rules_only",
+  "checks": [
+    {
+      "name": "complete_eligible",
+      "expected": true,
+      "actual": true,
+      "passed": true
+    },
+    {
+      "name": "unknown_wording",
+      "expected": false,
+      "actual": false,
+      "passed": true
+    },
+    {
+      "name": "future_composition",
+      "expected": false,
+      "actual": false,
+      "passed": true
+    },
+    {
+      "name": "future_wording",
+      "expected": false,
+      "actual": false,
+      "passed": true
+    },
+    {
+      "name": "unknown_known_date",
+      "expected": false,
+      "actual": false,
+      "passed": true
+    },
+    {
+      "name": "future_known_date",
+      "expected": false,
+      "actual": false,
+      "passed": true
+    },
+    {
+      "name": "editor_note",
+      "expected": false,
+      "actual": false,
+      "passed": true
+    },
+    {
+      "name": "other_speaker",
+      "expected": false,
+      "actual": false,
+      "passed": true
+    },
+    {
+      "name": "string_boolean",
+      "expected": false,
+      "actual": false,
+      "passed": true
+    },
+    {
+      "name": "string_review",
+      "expected": false,
+      "actual": false,
+      "passed": true
+    },
+    {
+      "name": "bad_date",
+      "expected": false,
+      "actual": false,
+      "passed": true
+    },
+    {
+      "name": "all_seed_cards_fail_closed_without_historical_review",
+      "passed": true
+    },
+    {
+      "name": "page_context_exact_source_and_adjacent_order",
+      "passed": true
+    },
+    {
+      "name": "full_index_2239_distinct_pages_without_embedded_duplicates",
+      "passed": true
+    },
+    {
+      "name": "full_index_phrase_retrieval_and_strict_no_evidence",
+      "passed": true
+    }
+  ],
+  "language_model_evaluation": "not_performed"
+}

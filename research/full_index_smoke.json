@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-25",
+  "indexed_pages": 2239,
+  "results": [
+    {
+      "query": "理论的基础是实践",
+      "mode": "research",
+      "as_of": null,
+      "eligible_cards": null,
+      "top_anchors": [
+        "06_quotations:p0187",
+        "01_selected_works_v1:p0270",
+        "01_selected_works_v1:p0309",
+        "01_selected_works_v1:p0278",
+        "01_selected_works_v1:p0272"
+      ]
+    },
+    {
+      "query": "调查纲目",
+      "mode": "research",
+      "as_of": null,
+      "eligible_cards": null,
+      "top_anchors": [
+        "03_selected_works_v3:p0010",
+        "06_quotations:p0213",
+        "06_quotations:p0209",
+        "06_quotations:p0212",
+        "03_selected_works_v3:p0011"
+      ]
+    },
+    {
+      "query": "1958 真老虎 纸老虎",
+      "mode": "strict",
+      "as_of": "1937-08-31",
+      "eligible_cards": 0,
+      "top_anchors": []
+    }
+  ],
+  "limitation": "候选定位与严格资格检查；不是全库召回率或对话模型评测"
+}

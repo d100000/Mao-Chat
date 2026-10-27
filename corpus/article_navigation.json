@@ -1,0 +1,146 @@
+{
+  "scope": "20篇代表篇目的PDF页导航，不是全部篇目索引或逐字校勘结果。范围包含篇前题解/篇末注释，不能把范围中每句都当作作者正文或同一原作日期。",
+  "numbering": "1-based physical PDF page",
+  "articles": [
+    {
+      "source_id": "01_selected_works_v1",
+      "title": "中国社会各阶级的分析",
+      "pdf_page_start": 12,
+      "pdf_page_end": 20,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "01_selected_works_v1",
+      "title": "湖南农民运动考察报告",
+      "pdf_page_start": 21,
+      "pdf_page_end": 53,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "01_selected_works_v1",
+      "title": "实践论",
+      "pdf_page_start": 268,
+      "pdf_page_end": 282,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "01_selected_works_v1",
+      "title": "矛盾论",
+      "pdf_page_start": 283,
+      "pdf_page_end": 321,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "02_selected_works_v2",
+      "title": "反对自由主义",
+      "pdf_page_start": 26,
+      "pdf_page_end": 28,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "02_selected_works_v2",
+      "title": "论持久战",
+      "pdf_page_start": 103,
+      "pdf_page_end": 180,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "02_selected_works_v2",
+      "title": "新民主主义论",
+      "pdf_page_start": 319,
+      "pdf_page_end": 366,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "02_selected_works_v2",
+      "title": "论政策",
+      "pdf_page_start": 416,
+      "pdf_page_end": 424,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "03_selected_works_v3",
+      "title": "《农村调查》的序言和跋",
+      "pdf_page_start": 9,
+      "pdf_page_end": 14,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "03_selected_works_v3",
+      "title": "改造我们的学习",
+      "pdf_page_start": 15,
+      "pdf_page_end": 23,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "03_selected_works_v3",
+      "title": "关于领导方法的若干问题",
+      "pdf_page_start": 114,
+      "pdf_page_end": 119,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "03_selected_works_v3",
+      "title": "为人民服务",
+      "pdf_page_start": 167,
+      "pdf_page_end": 169,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "03_selected_works_v3",
+      "title": "论联合政府",
+      "pdf_page_start": 192,
+      "pdf_page_end": 262,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "04_selected_works_v4",
+      "title": "纠正土地改革宣传中的“左”倾错误",
+      "pdf_page_start": 164,
+      "pdf_page_end": 166,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "04_selected_works_v4",
+      "title": "在中国共产党第七届中央委员会第二次全体会议上的报告",
+      "pdf_page_start": 303,
+      "pdf_page_end": 318,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "04_selected_works_v4",
+      "title": "党委会的工作方法",
+      "pdf_page_start": 319,
+      "pdf_page_end": 323,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "04_selected_works_v4",
+      "title": "论人民民主专政",
+      "pdf_page_start": 346,
+      "pdf_page_end": 360,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "05_selected_works_v5",
+      "title": "不要四面出击",
+      "pdf_page_start": 34,
+      "pdf_page_end": 37,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "05_selected_works_v5",
+      "title": "论十大关系",
+      "pdf_page_start": 280,
+      "pdf_page_end": 301,
+      "strict_historical_eligibility": "not_assessed"
+    },
+    {
+      "source_id": "05_selected_works_v5",
+      "title": "关于正确处理人民内部矛盾的问题",
+      "pdf_page_start": 376,
+      "pdf_page_end": 415,
+      "strict_historical_eligibility": "not_assessed"
+    }
+  ]
+}

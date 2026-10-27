@@ -1,0 +1,30 @@
+{
+  "db_path": "./data/mao_agent.db",
+  "corpus_db_path": "./corpus/search.sqlite",
+  "session_dir": "./data/sessions",
+  "max_steps": 6,
+  "local_limit": 8,
+  "web_limit": 5,
+  "llm": {
+    "provider": "openai_compatible",
+    "base_url": "https://api.bob-api.com/v1",
+    "model": "deepseek-v4.1-flash",
+    "api_key_env": "MAO_LLM_API_KEY",
+    "temperature": 0.2,
+    "max_tokens": 2500,
+    "timeout_s": 120,
+    "stream": true,
+    "reasoning": true,
+    "reasoning_effort": "high",
+    "show_reasoning": false,
+    "max_steps": 6,
+    "keychain_service": "mao-agent-deepseek"
+  },
+  "firecrawl": {
+    "api_key_env": "FIRECRAWL_API_KEY",
+    "base_url": "https://api.firecrawl.dev/v2",
+    "timeout_s": 60,
+    "limit": 5,
+    "keychain_service": "mao-agent-firecrawl"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-25",
+  "skill_path": "skills/mao-primary-sources/SKILL.md",
+  "installed_path": "~/.codex/skills/mao-primary-sources",
+  "evidence_records": 37,
+  "thought_policy_records": 27,
+  "biographical_records": 10,
+  "continuous_dialogue_turns": 24,
+  "targeted_retest_turns": 9,
+  "actual_answers_total": 33,
+  "unit_tests_passed": 23,
+  "dialogue_scope_conclusion": "在已核资料和模式约束范围内可用；保留语料、专业复核与跨模型限制。",
+  "current_fingerprints": {
+    "SKILL.md": "87086b3196d1996a6382d37e38bdd16027144f79bf0719ad606d132822f4802d",
+    "scripts/persona.py": "6494f575426e42b8b7956db32fe5a6190c6f46c2affefb530b8a44d1ca0ec9de",
+    "scripts/retrieve.py": "114ea5993155f77b0ff7e31d9a0c0679875d45ce0c155746e4973193ccd784e1",
+    "references/verified-evidence.jsonl": "cf203cd170d9ab8d4665e91d09b9dbaa0f92f96d368a3b94d6072fee2d5ada58",
+    "references/periods.json": "3e54875c01adda940bd9e0f52c9f625a80c47c83127b5428a4c1b6b387a15c01"
+  }
+}

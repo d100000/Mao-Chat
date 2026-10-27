@@ -1,0 +1,134 @@
+{
+  "date": "2026-10-27",
+  "scope": "教员：本轮核心产品优化与公开源码发布",
+  "implemented": [
+    "倾听与可纠正的三层目标",
+    "12个有出处且保留历史边界的思想解释维度",
+    "标准引用及实际采用来源",
+    "用户确认的行动状态与反馈",
+    "议题管理、显式跨议题记忆、临时对话",
+    "停止、删除与旧流并发隔离",
+    "可独立初始化的公开资料库"
+  ],
+  "unit_tests": {
+    "total": 188,
+    "passed": 188,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "public_checkout": {
+    "bootstrap": {
+      "profile": "curated",
+      "evidence_cards": 37,
+      "events": 10,
+      "quotes": 25,
+      "philosophy_rules": 13
+    },
+    "unit_tests": {
+      "total": 188,
+      "passed": 180,
+      "skipped": 8,
+      "failures": 0,
+      "errors": 0
+    },
+    "skip_reason": "可选本地完整PDF/OCR集成；公开仓库不含这些资产",
+    "npm_ci": "passed",
+    "python_compileall": "passed"
+  },
+  "browser_tests": [
+    {
+      "script": "tests/e2e/product.mjs",
+      "provider": "deterministic-test-double",
+      "passed": 12,
+      "failed": 0,
+      "checks": [
+        "direct conversation entry and secondary research tools",
+        "layered understanding and exact clickable references",
+        "actions require explicit acceptance attempts and feedback",
+        "rename is text safe and remembered issues remain explicit",
+        "archive restore and structured export",
+        "listening does not create or execute another action",
+        "a new issue uses remembered context only after selection",
+        "temporary conversations keep context without browser or server history",
+        "stopping a stream allows an immediate new question",
+        "mobile notes drawers and compact research menu",
+        "deleting an issue clears server state memory and local cache",
+        "account isolation and logout have no uncaught browser errors"
+      ]
+    },
+    {
+      "script": "tests/e2e/run.mjs",
+      "provider": "deterministic-test-double",
+      "passed": 17,
+      "failed": 0,
+      "checks": [
+        "login page desktop and mobile layout",
+        "registration and ordinary login",
+        "research question, local evidence, network disabled",
+        "history restore and follow-up context",
+        "network enabled gives candidate evidence",
+        "historical mode requires cutoff and disables external search",
+        "history restores mode and cutoff",
+        "modern mode question",
+        "generation failure is visible and allows retry",
+        "stop generation and continue",
+        "workspace mobile layout, sidebar and evidence drawer",
+        "logout, invalid password, relogin",
+        "same-browser user isolation",
+        "admin login, configuration validation and save",
+        "admin lock revokes sessions, blocks login, unlock restores access and saved config serves questions",
+        "admin mobile layout and logout",
+        "no uncaught browser script errors"
+      ]
+    }
+  ],
+  "real_provider_acceptance": {
+    "model": "deepseek-v4.1-flash",
+    "legacy_model_and_firecrawl": {
+      "passed": 8,
+      "failed": 0
+    },
+    "new_product": {
+      "passed": 7,
+      "failed": 0,
+      "checks": [
+        "real listening respects a request not to assign an action",
+        "real advice separates goals and creates only a proposal",
+        "user explicitly accepts the action",
+        "shortening a reply preserves the stage goal and user action state",
+        "user authorizes the issue as a memory",
+        "authorized memory supports a temporary real conversation without a saved transcript",
+        "action feedback export and deletion remain controlled by the user"
+      ]
+    },
+    "manual_review": [
+      "倾听时不安排任务",
+      "阶段目标、资源约束及人数未知保持一致",
+      "350字以内分析与200字、三句话压缩符合要求",
+      "引用可独立追溯，现代类比不冒充历史原话"
+    ],
+    "answer_char_counts": {
+      "listen": 141,
+      "plan": 302,
+      "compact": 161,
+      "temporary-memory": 181
+    },
+    "raw_transcripts": "仅保存在本机忽略目录，不发布"
+  },
+  "document": {
+    "path": "docs/教员产品优化方案.docx",
+    "pages_rendered_and_reviewed": 17,
+    "local_home_paths_removed": 8
+  },
+  "release_inventory": {
+    "files": 126,
+    "findings": 0,
+    "scope": "Git实际索引内容，包括DOCX XML；凭据、私有状态、home路径及体积检查"
+  },
+  "limits": [
+    "真实模型验收为有限合成场景，不能证明所有建议的语义质量或长期陪伴效果",
+    "本轮实现核心交互，用户研究、长期效果评估与其他后续阶段仍按产品方案推进",
+    "临时对话不保存于本应用；所配置模型及启用搜索服务的数据处理由其服务安排决定"
+  ]
+}

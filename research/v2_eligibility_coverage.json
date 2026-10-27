@@ -1,0 +1,46 @@
+{
+  "cards": 37,
+  "dates": [
+    {
+      "as_of": "1927-03-31",
+      "content_cards": 4,
+      "verbatim_cards": 0
+    },
+    {
+      "as_of": "1938-06-30",
+      "content_cards": 10,
+      "verbatim_cards": 0
+    },
+    {
+      "as_of": "1945-04-25",
+      "content_cards": 18,
+      "verbatim_cards": 0
+    },
+    {
+      "as_of": "1949-07-01",
+      "content_cards": 24,
+      "verbatim_cards": 2
+    },
+    {
+      "as_of": "1956-04-25",
+      "content_cards": 30,
+      "verbatim_cards": 3
+    },
+    {
+      "as_of": "1957-03-01",
+      "content_cards": 31,
+      "verbatim_cards": 3
+    },
+    {
+      "as_of": "1957-06-19",
+      "content_cards": 35,
+      "verbatim_cards": 6
+    },
+    {
+      "as_of": "1957-07-02",
+      "content_cards": 36,
+      "verbatim_cards": 7
+    }
+  ],
+  "note": "资格数量不是问答准确率；年代前可用也不表示该立场在所有后期场景仍为现行政策。"
+}

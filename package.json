@@ -1,0 +1,15 @@
+{
+  "name": "mao-chat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "教员 持续对话与有出处的思想问答",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "python3 -m unittest discover -q",
+    "test:ui": "node tests/e2e/product.mjs",
+    "test:ui:legacy": "node tests/e2e/run.mjs",
+    "test:live": "node tests/e2e/consult.mjs",
+    "test:live:product": "python3 scripts/live_product_check.py --run"
+  },
+  "devDependencies": { "playwright": "1.62.1" }
+}

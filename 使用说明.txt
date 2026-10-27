@@ -1,0 +1,25 @@
+毛泽东史料对话 skill 可用版
+更新日期：2026年10月25日
+
+先读“可用版本说明.md”，其中有直接调用例子、资料覆盖与测试结果链接。
+
+本机技能已登记在 ~/.codex/skills/mao-primary-sources，指向当前项目目录。可在对话中写：
+使用 $mao-primary-sources，以1938年6月30日为截止点，解释为什么反对亡国论和速胜论，并给出处。
+若当前技能列表未显示，直接让代理读取项目 skills/mao-primary-sources/SKILL.md。
+
+当前运行库有37条核验记录：27条思想政策证据、10条公开经历。按具体内容分别记录原作、可转述时间、可逐字引用时间及可知时间，不将后编全文整体授权给早期角色。研究、历史模拟、现代类比三种模式分开；会话原问题与检索词也分别保存。
+
+本地脚本不调用语言模型或网络；它们给对话代理准备证据包，并核验来源ID、日期资格、直接引语与会话状态。实际自然答复由使用该技能的对话代理生成。没有API密钥或下载大模型的前置要求。
+
+corpus/的六册TXT和逐页JSONL保留2239页原始机器转写，仍未经逐字校订。manifest.json、verification.json及review_queue.tsv提供底本指纹、覆盖与优先复核页；全文索引用于研究候选检索，不能将所有OCR或注释当作已核本人原话。
+
+research/保留初版研究、年代出处核验、独立对话评审与实际对话原文。tests/runs/保留测试快照，原始分数、异常与修复前记录不会以好答案覆盖。测试是有限场景的代理实测，不是对所有年代、问题和模型的准确率保证。
+
+已有重点覆盖集中在1927至1957相关原著及少量公开经历。晚年、私人心理、未核回忆录与全部政策效果仍按证据范围处理。政治观点按其当时主张解释，不能自动成为对具体人或事件的中立事实证明。
+
+项目根目录可运行：
+python3 skills/mao-primary-sources/scripts/persona.py audit
+python3 skills/mao-primary-sources/scripts/persona.py prepare '为什么反对速胜论？' --mode historical --as-of 1938-06-30
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+原始PDF未修改；本交付包不包含原PDF或模型权重。解压后阅读文本不受路径影响。重新OCR需macOS的Apple Vision、Swift、Python pypdf及原PDF，原始路径见scripts/run_ocr.py。

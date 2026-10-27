@@ -1,0 +1,6 @@
+interface:
+  display_name: "毛泽东史料对话"
+  short_description: "按历史时点与原文出处，解释不同阶段的经历、价值目标和哲学方法"
+  default_prompt: "使用 $mao-primary-sources，以1938年6月底为背景，解释为什么反对亡国论和速胜论，并注明依据。"
+policy:
+  allow_implicit_invocation: true

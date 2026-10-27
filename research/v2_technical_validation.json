@@ -1,0 +1,25 @@
+{
+  "checked_on": "2026-10-25",
+  "unit_test_command": "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+  "unit_tests_run": 23,
+  "unit_tests_passed": 23,
+  "skill_schema_validation": "passed",
+  "evidence_audit": "37 records passed",
+  "full_corpus_pages": 2239,
+  "failure_recovery": "modern research-only null summary corrected; original user message and retrieval query separated; URI year warnings filtered",
+  "scope": "Code and evidence eligibility invariants; actual dialogue quality separately reviewed.",
+  "fingerprints": {
+    "SKILL.md": "87086b3196d1996a6382d37e38bdd16027144f79bf0719ad606d132822f4802d",
+    "scripts/persona.py": "6494f575426e42b8b7956db32fe5a6190c6f46c2affefb530b8a44d1ca0ec9de",
+    "scripts/retrieve.py": "114ea5993155f77b0ff7e31d9a0c0679875d45ce0c155746e4973193ccd784e1",
+    "references/verified-evidence.jsonl": "cf203cd170d9ab8d4665e91d09b9dbaa0f92f96d368a3b94d6072fee2d5ada58",
+    "references/periods.json": "3e54875c01adda940bd9e0f52c9f625a80c47c83127b5428a4c1b6b387a15c01"
+  },
+  "audit_attempts": "check与record自动追加完整草稿与结果，拒绝和通过尝试都保留；新增于33个模型答复之后，仅机械留档路径由确定性测试验证，不能补回旧初稿。",
+  "dialogue_responses": 33,
+  "dialogue_breakdown": {
+    "continuous_first_pass": 24,
+    "query_provenance_retest": 5,
+    "depth_targeted_retest": 4
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "annotations": [
+    {
+      "source_id": "01_selected_works_v1",
+      "pdf_page": 11,
+      "ai_visual_review_status": "blank_confirmed_at_thumbnail",
+      "note": "AI inspected a rendered page at 480px longest edge; no printed or handwritten text visible. This is not human proofreading."
+    },
+    {
+      "source_id": "01_selected_works_v1",
+      "pdf_page": 55,
+      "ai_visual_review_status": "blank_confirmed_at_thumbnail",
+      "note": "AI inspected a rendered page at 480px longest edge; no printed or handwritten text visible. This is not human proofreading."
+    },
+    {
+      "source_id": "02_selected_works_v2",
+      "pdf_page": 165,
+      "ai_visual_review_status": "blank_confirmed_at_thumbnail",
+      "note": "AI inspected a rendered page at 480px longest edge; no printed or handwritten text visible. This is not human proofreading."
+    },
+    {
+      "source_id": "02_selected_works_v2",
+      "pdf_page": 185,
+      "ai_visual_review_status": "blank_confirmed_at_thumbnail",
+      "note": "AI inspected a rendered page at 480px longest edge; no printed or handwritten text visible. This is not human proofreading."
+    },
+    {
+      "source_id": "02_selected_works_v2",
+      "pdf_page": 248,
+      "ai_visual_review_status": "blank_confirmed_at_thumbnail",
+      "note": "AI inspected a rendered page at 480px longest edge; no printed or handwritten text visible. This is not human proofreading."
+    },
+    {
+      "source_id": "03_selected_works_v3",
+      "pdf_page": 49,
+      "ai_visual_review_status": "blank_confirmed_at_thumbnail",
+      "note": "AI inspected a rendered page at 480px longest edge; no printed or handwritten text visible. This is not human proofreading."
+    },
+    {
+      "source_id": "05_selected_works_v5",
+      "pdf_page": 15,
+      "ai_visual_review_status": "blank_confirmed_at_thumbnail",
+      "note": "AI inspected a rendered page at 480px longest edge; no printed or handwritten text visible. This is not human proofreading."
+    },
+    {
+      "source_id": "06_quotations",
+      "pdf_page": 2,
+      "ai_visual_review_status": "blank_confirmed_at_thumbnail",
+      "note": "AI inspected a rendered page at 480px longest edge; no printed or handwritten text visible. This is not human proofreading."
+    },
+    {
+      "source_id": "06_quotations",
+      "pdf_page": 283,
+      "ai_visual_review_status": "blank_confirmed_at_thumbnail",
+      "note": "AI inspected a rendered page at 480px longest edge; no printed or handwritten text visible. This is not human proofreading."
+    },
+    {
+      "source_id": "06_quotations",
+      "pdf_page": 6,
+      "ai_visual_review_status": "handwriting_transcribed",
+      "ai_visual_transcription": "努力学习\n保卫国防\n毛泽东",
+      "note": "AI visual transcription from the rendered original page at 1300px longest edge. Not human proofread; signature transcribed as visible, not independent authorship authentication.",
+      "preview_file": "../tmp/pdfs/quotations_p6_handwriting.png"
+    },
+    {
+      "source_id": "04_selected_works_v4",
+      "pdf_page": 341,
+      "ai_visual_review_status": "blank_confirmed_at_thumbnail",
+      "note": "AI inspected a rendered page at 480px longest edge; no printed or handwritten text visible. This is not human proofreading."
+    }
+  ],
+  "human_review_status": "unreviewed"
+}
