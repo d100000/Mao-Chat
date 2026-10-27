@@ -1,21 +1,21 @@
-# 教员本地账户认证
+# 教员身份与账户认证
 
-`agent.auth.AuthService` 提供账户、验证码和会话的标准库实现，`agent.auth_server` 提供只监听本机的注册/登录页面。
+`agent.auth.AuthService` 提供账户、验证码和会话的标准库实现，`agent.auth_server` 默认只监听本机，工作台允许访客使用。部署配置见 [积分与安全](credits-and-security.md)。
 
 ## 启动
 
 ```bash
 python3 -m agent.auth_server --host 127.0.0.1 --port 8765 --db data/mao_agent.db
 open http://127.0.0.1:8765/auth
-# 登录成功后打开
+# 也可直接以访客进入
 open http://127.0.0.1:8765/app
 ```
 
-注册和登录都需要算术题验证码。登录成功后，浏览器只通过 `HttpOnly`、`SameSite=Lax` Cookie 保存会话；JSON 响应不会返回原始会话 token。
+普通账户注册和登录使用服务端验证的人机挑战。验证结果绑定当前身份、操作ID和参数摘要；前端声称验证成功不能获得积分或会话。登录成功后，浏览器只通过 `HttpOnly`、`SameSite=Lax` Cookie 保存会话；JSON 响应不会返回原始会话 token。
 
-页面通过同源 JSON 接口 `POST /api/auth/captcha` 获取算术题挑战；注册和登录提交到 `/api/auth/register`、`/api/auth/login`。退出使用 `POST /api/auth/logout`，状态查询使用 `GET /api/auth/me`。也可用 `GET /auth/captcha.svg` 获取一张独立的算术题 SVG。
+页面先调用 `POST /api/guest/bootstrap` 建立独立的访客内容、试用资格和钱包能力。受保护操作返回 `challenge_required` 后，通过 `POST /api/security/verify` 交换短期证明；带相同操作ID和内容重试原操作。注册和登录提交到 `/api/auth/register`、`/api/auth/login`。退出使用 `POST /api/auth/logout`，状态查询使用 `GET /api/auth/me`。旧算术挑战仅保留给管理员入口及受信本地Python兼容接口，不能替代普通HTTP账户的人机验证。
 
-登录后的工作台位于 `/app`。它通过 `POST /api/agent/stream` 接收 `question`、`mode`、`as_of` 和 `thread_id`，以 SSE 返回状态、工具结果、回答片段和完成事件；会话历史按用户前缀保存到本地 Agent 会话目录。
+工作台位于 `/app`。先经 `/api/points/quote` 获取并确认报价，再通过 `POST /api/agent/stream` 提交原参数、`quote_id` 和 `client_request_id`，以 SSE 返回受理、状态、回答片段及结算。访客与账户使用不同的服务端存储身份；IP仅参与风险判断，不能据此获取会话。
 
 服务对验证码和认证提交按客户端地址做短窗口限速，并拒绝带有非本服务 `Origin` 的请求。默认回环地址使用 HTTP；绑定非回环地址时会标记会话 Cookie 为 `Secure`，应通过 HTTPS 反向代理访问。
 
@@ -51,7 +51,7 @@ result = auth.register(
 
 `MAO_AUTH_CAPTCHA_PEPPER` 仍可作为兼容的环境变量名，但新部署建议使用 `MAO_AUTH_SECRET`。
 
-注册和登录使用一次性挑战；`verify_math` 可用于需要分步验证的客户端。会话由 `validate_session(token)` 检查，退出用 `logout(token)`，成功登录返回的 token 只在内存中出现一次。
+上面的Python例子是受信本机接口的兼容用法。HTTP客户端必须走强人机验证；不能提交 `require_captcha=false` 跳过。会话由 `validate_session(token)` 检查，退出用 `logout(token)`，成功登录返回的 token 只在内存中出现一次。公网管理员还必须完成TOTP，财务写操作要求最近5分钟内重新验证；本地登记命令见 [管理员说明](admin_usage.md)。
 
 ## 测试
 

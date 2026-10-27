@@ -45,7 +45,9 @@ def clean_usage(value):
     return result
 
 
-def record_model_call(usage, elapsed_ms, status='ok'):
+def record_model_call(usage, elapsed_ms, status='ok', provider_request_id=None):
+    from .billing_runtime import record_billed_call
+    record_billed_call(usage, status, provider_request_id)
     current = _CURRENT.get()
     if current is not None and len(current['calls']) < 32:
         current['calls'].append({**clean_usage(usage), 'elapsed_ms': max(0, int(elapsed_ms)), 'status': 'ok' if status == 'ok' else 'error'})

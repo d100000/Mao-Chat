@@ -9,6 +9,7 @@ import datetime as _dt
 import ipaddress
 import inspect
 import json
+import os
 import re
 import threading
 import uuid
@@ -28,6 +29,15 @@ from .statements import effective_analysis, prompt_statement_context
 from .quality import QualityStore, failure_code
 from .telemetry import audit_metadata, telemetry_scope
 from .issues import IssueError, IssueStore, proposal, public_analysis, public_metadata, public_tools, thread_id as validate_thread_id
+from .points import PointsStore, PointsError
+from .security import SecurityService, SecurityError
+from .credits_http import CreditsHTTPMixin, _ChallengeSent
+from .billing_runtime import billing_scope
+from .guest_migration import GuestMigrationStore
+from .billing_admin import BillingAdminStore
+from .risk_audit import RiskAuditStore
+from .security_config import SecurityConfigStore
+from .security_appeals import SecurityAppealsStore
 
 MAX_BODY_BYTES = 64 * 1024
 MAX_HISTORY_CHARS = 96_000
@@ -145,7 +155,7 @@ def _decode_svg_data_uri(value: str) -> bytes:
 # Kept for integrations that import the login document.
 HTML = (WEB_ROOT / "auth.html").read_text(encoding="utf-8")
 
-class AuthHandler(BaseHTTPRequestHandler):
+class AuthHandler(CreditsHTTPMixin, BaseHTTPRequestHandler):
     server_version = "MaoAgentAuth/1.0"
     @property
     def service(self): return self.server.auth_service  # type: ignore[attr-defined]
@@ -158,6 +168,9 @@ class AuthHandler(BaseHTTPRequestHandler):
         self._json(code, {"ok": False, "error": str(message or "请求错误")[:300]})
 
     def _origin_allowed(self):
+        request_host = urlparse('//' + self.headers.get('Host', '')).hostname
+        if not request_host or request_host.lower().rstrip('.') not in self.server.allowed_hosts:
+            return False
         origin = self.headers.get("Origin")
         if not origin:
             return True
@@ -172,22 +185,8 @@ class AuthHandler(BaseHTTPRequestHandler):
         return False
 
     def _allow_request(self, kind: str, limit: int = 30) -> bool:
-        """Apply a small per-client window before creating DB challenges."""
-        now = time.monotonic()
-        address = self.client_address[0] if self.client_address else "unknown"
-        key = (address, kind)
-        with self.server.rate_lock:  # type: ignore[attr-defined]
-            if len(self.server.rate_counts) > 4096:  # type: ignore[attr-defined]
-                cutoff = now - 60
-                self.server.rate_counts = {k: v for k, v in self.server.rate_counts.items() if v[0] >= cutoff}  # type: ignore[attr-defined]
-            window, count = self.server.rate_counts.get(key, (now, 0))  # type: ignore[attr-defined]
-            if now - window >= 60:
-                window, count = now, 0
-            if count >= limit:
-                self.server.rate_counts[key] = (window, count)  # type: ignore[attr-defined]
-                return False
-            self.server.rate_counts[key] = (window, count + 1)  # type: ignore[attr-defined]
-            return True
+        """Share atomic source windows across workers and process restarts."""
+        return self.server.security.check_rate('http:' + kind, self._source(), limit)
 
     def _send(self, status, body, content_type="application/json; charset=utf-8", extra=None):
         self.send_response(status)
@@ -197,14 +196,21 @@ class AuthHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         for key, value in (extra or {}).items():
-            self.send_header(key, value)
+            for item in value if isinstance(value, list) else [value]:
+                self.send_header(key, item)
         self.end_headers()
         self.wfile.write(body)
 
     def _json(self, status, value, extra=None):
+        if status >= 400 and isinstance(value, dict) and not value.get('risk_event_id') and hasattr(self.server, 'risk_audit'):
+            if not (urlparse(self.path).path == '/api/auth/me' and status == 401):
+                event_id = self._record_risk(value.get('code') or ('http_' + str(status)), status)
+                if event_id: value = {**value, 'risk_event_id': event_id}
         self._send(status, json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), extra=extra)
 
     def _body(self):
+        if self.headers.get('Transfer-Encoding'):
+            raise ValueError('不支持此请求编码')
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError as exc:
@@ -214,8 +220,17 @@ class AuthHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length)
         if not raw:
             return {}
+        if self.headers.get('Content-Type', '').split(';', 1)[0].lower() != 'application/json':
+            raise ValueError('请求必须使用application/json')
+        def unique_object(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value: raise ValueError('JSON包含重复字段')
+                value[key] = item
+            return value
         try:
-            value = json.loads(raw.decode("utf-8"))
+            value = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_object,
+                               parse_constant=lambda _: (_ for _ in ()).throw(ValueError('JSON数值无效')))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ValueError("请求 JSON 无效") from exc
         if not isinstance(value, dict):
@@ -236,9 +251,7 @@ class AuthHandler(BaseHTTPRequestHandler):
         return morsel.value if morsel else None
 
     def _current_user(self):
-        token = self._token() or ""
-        result = self.service.validate_session(token)
-        return result.get("user") if result.get("ok") else None
+        return self._principal_user()
 
     def _admin_token(self):
         authorization = self.headers.get("Authorization", "")
@@ -258,7 +271,7 @@ class AuthHandler(BaseHTTPRequestHandler):
 
     def _admin_required(self):
         admin = self._current_admin()
-        if not admin:
+        if not admin or (self.server.require_admin_mfa and not admin.get('mfa_verified_at')):
             self._json(401, {"ok": False, "error": "需要管理员登录"})
             return None
         return admin
@@ -270,6 +283,7 @@ class AuthHandler(BaseHTTPRequestHandler):
         config.session_dir = previous.session_dir
         config.corpus_db_path = previous.corpus_db_path
         self.server.agent = Agent(config)  # type: ignore[attr-defined]
+        self.server.migration.agent = self.server.agent
 
     def _agent_session(self, thread_id: str):
         user = self._current_user()
@@ -278,6 +292,7 @@ class AuthHandler(BaseHTTPRequestHandler):
             return
         agent = self.server.agent  # type: ignore[attr-defined]
         try:
+            self._content_available(user, thread_id)
             snapshot = self.server.issues.load(user['user_id'], thread_id, agent)
         except IssueError as exc:
             self._issue_error(exc)
@@ -306,6 +321,7 @@ class AuthHandler(BaseHTTPRequestHandler):
             self._json(401, {'ok': False, 'error': '请先登录'})
             return
         try:
+            self._content_available(user)
             agent, store = self.server.agent, self.server.issues
             if path == '/api/agent/sessions':
                 archived = query.get('include_archived', ['0'])[0]
@@ -316,6 +332,7 @@ class AuthHandler(BaseHTTPRequestHandler):
             elif path == '/api/agent/session/export':
                 tid = validate_thread_id(query.get('thread_id', [''])[0])
                 with store.lock:
+                    self._content_available(user, tid)
                     data = store.export(user['user_id'], tid, agent)
                     data['feedback'] = self.server.quality.export_feedback(user['user_id'], tid)
                 self._json(200, {'ok': True, **data}, {'Content-Disposition': 'attachment; filename="jiaoyuan-' + tid + '.json"'})
@@ -339,8 +356,10 @@ class AuthHandler(BaseHTTPRequestHandler):
             return
         try:
             tid = validate_thread_id(data.get('thread_id'))
-            metadata = self.server.issues.update(user['user_id'], tid, self.server.agent,
-                                                  {k: v for k, v in data.items() if k != 'thread_id'})
+            with self.server.issues.lock:
+                self._content_available(user, tid)
+                metadata = self.server.issues.update(user['user_id'], tid, self.server.agent,
+                                                      {k: v for k, v in data.items() if k != 'thread_id'})
             self._json(200, {'ok': True, 'thread_id': tid, 'metadata': metadata, 'actions': metadata['actions']})
         except IssueError as exc:
             self._issue_error(exc)
@@ -353,9 +372,11 @@ class AuthHandler(BaseHTTPRequestHandler):
         try:
             if set(data) - {'thread_id','turn_id','kind','comment'}: raise IssueError('反馈字段无效')
             tid = validate_thread_id(data.get('thread_id'))
+            self._content_available(user, tid)
             turn = data.get('turn_id')
             if not isinstance(turn,str) or not re.fullmatch(r'[a-f0-9]{32}',turn): raise IssueError('答复标识无效')
             with self.server.issues.lock:
+                self._content_available(user, tid)
                 snapshot = self.server.issues.load(user['user_id'],tid,self.server.agent)
                 if not snapshot['exists'] or not any(x.get('role')=='assistant' and x.get('turn_id')==turn for x in snapshot['messages']):
                     raise IssueError('未找到当前账户的这条答复',404)
@@ -370,9 +391,11 @@ class AuthHandler(BaseHTTPRequestHandler):
         except OSError:
             self._json(404, {"ok": False, "error": "页面不存在"})
             return
-        self._send(200, data, "text/html; charset=utf-8", {"Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"})
+        self._send(200, data, "text/html; charset=utf-8", {"Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"})
 
     def _sse_start(self, stream_token=None):
+        self._peer_disconnected = False
+        self._sse_sequence = 0
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache, no-store")
@@ -386,9 +409,20 @@ class AuthHandler(BaseHTTPRequestHandler):
         self.close_connection = True
 
     def _sse(self, value):
+        if getattr(self, '_peer_disconnected', False):
+            return
+        self._sse_sequence = getattr(self, '_sse_sequence', 0) + 1
+        value = {**value, 'event_id': self._sse_sequence}
+        if getattr(self, '_billing_request_id', None):
+            value.setdefault('request_id', self._billing_request_id)
         payload = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-        self.wfile.write(("data: " + payload + "\n\n").encode("utf-8"))
-        self.wfile.flush()
+        try:
+            self.wfile.write(("data: " + payload + "\n\n").encode("utf-8"))
+            self.wfile.flush()
+        except OSError:
+            # A network disconnect is not a user-authorized cancellation.
+            # Finish/save ordinary answers so the accepted request is recoverable.
+            self._peer_disconnected = True
 
     def _agent_stream(self, data):
         """Run one bounded model stream, rejecting concurrent overload."""
@@ -456,8 +490,23 @@ class AuthHandler(BaseHTTPRequestHandler):
         store = self.server.issues
         registered = False
         stream_token = None
+        reservation = None
         try:
             tid = validate_thread_id(tid)
+            with store.lock:
+                reservation = self._reserve_generation(data, user)
+                self._billing_request_id = reservation['request_id']
+                if reservation.get('duplicate'):
+                    recovered = self._request_recovery(user['actor'], reservation['request_id'])
+                    self._sse_start()
+                    self._sse({'type': 'accepted', 'client_request_id': data.get('client_request_id'), 'replayed': True})
+                    if recovered.get('answer'):
+                        self._sse({'type': 'content', 'text': recovered['answer']})
+                    self._sse({'type': 'usage_pending' if recovered['state'] in {'reserved','running','usage_pending'} else 'settled',
+                               'charge': recovered, 'wallet': self._stream_wallet(user)})
+                    self._sse({'type': 'done', 'thread_id': tid, 'replayed': True})
+                    return
+                self._content_available(user, tid)
             memory_ids = data.get('memory_thread_ids', [])
             if mode != 'consult' and memory_ids:
                 raise IssueError('此模式不使用其他议题记忆')
@@ -476,15 +525,23 @@ class AuthHandler(BaseHTTPRequestHandler):
                     raise IssueError('对话模式与截止日期已固定，请新建对话。', 409)
             history = _bounded_history(history, preserve_metadata=not temporary)
             prompt_history = _issue_prompt_history(history, mode, metadata, memories)
-        except IssueError as exc:
+        except (IssueError, PointsError, SecurityError) as exc:
             if registered: store.end_stream(user['user_id'], tid, stream_token)
-            self._issue_error(exc)
+            if reservation and not reservation.get('duplicate'):
+                self.server.points.settle(reservation['request_id'], delivered=False, failure=True)
+            if isinstance(exc, IssueError): self._issue_error(exc)
+            else: self._json(exc.status, {'ok': False, 'error': str(exc), 'code': exc.code})
             return
         session_id = store.session_id(user['user_id'], tid)
         agent_question = question.strip()
         if network_enabled:
             agent_question += "\n\n【界面设置】本轮已开启联网搜索；请在本地证据不足或需要当前网页资料时调用 firecrawl_search，并明确标注网页结果为候选。"
-        self._sse_start(stream_token)
+        try:
+            self._sse_start(stream_token)
+        except OSError:
+            try: self.server.points.settle(reservation['request_id'], delivered=False, failure=True)
+            finally: store.end_stream(user['user_id'], tid, stream_token)
+            return
         started = time.monotonic()
         answer_parts, tools = [], []
         analysis = metadata.get('analysis')
@@ -495,9 +552,20 @@ class AuthHandler(BaseHTTPRequestHandler):
         first_content_ms = None
         recorded = False
         failure_reason = 'unknown'
+        delivered, user_cancelled, charge_notified = False, False, False
+        pending_error = None
+        stream_iter = None
         measure_scope = telemetry_scope()
         measure_scope.__enter__()
+        def billing_active():
+            store.assert_active(user['user_id'], tid, stream_token)
+            if temporary and self._peer_disconnected:
+                raise IssueError('临时对话连接已中断，本轮不能恢复', 503)
+        charge_scope = billing_scope(self.server.points, reservation['request_id'],
+                                     assert_active=billing_active, search_bound=self.server.search_cash_bound)
+        charge_scope.__enter__()
         try:
+            self._sse({'type': 'accepted', 'client_request_id': data.get('client_request_id')})
             self._sse({"type": "status", "text": "正在理解你的处境" if mode == 'consult' else "正在读取本地史料"})
             cache_scope = agent.transient_web_cache() if hasattr(agent, 'transient_web_cache') else nullcontext()
             with cache_scope:
@@ -530,7 +598,7 @@ class AuthHandler(BaseHTTPRequestHandler):
                     elif kind == "error":
                         stream_error = str(event.get("error", "生成失败"))[:300]
                         failure_reason = failure_code(stream_error)
-                        self._sse({"type": "error", "error": stream_error})
+                        pending_error = {'type': 'error', 'error': stream_error, 'code': 'generation_failed'}
                         break
             if stream_error:
                 return
@@ -560,6 +628,12 @@ class AuthHandler(BaseHTTPRequestHandler):
                     self.server.quality.record_run(user['user_id'], tid, messages[-1].get('turn_id') or uuid.uuid4().hex, 'ok', (time.monotonic()-started)*1000, first_content_ms, audit_metadata(getattr(agent, 'config', None), tools))
                 saved = store.complete_stream(user['user_id'], tid, agent, messages, latest, question.strip(), audit, stream_token=stream_token)
                 recorded = True
+            delivered = not temporary or not self._peer_disconnected
+            self._remember_delivery(reservation['request_id'], saved.get('latest_turn_id'))
+            charge = self.server.points.settle(reservation['request_id'], delivered=delivered, failure=not delivered)
+            self._sse({'type': 'usage_pending' if charge['state'] == 'usage_pending' else 'settled',
+                       'charge': self._public_charge(charge), 'wallet': self._stream_wallet(user)})
+            charge_notified = True
             # Linearize the final acknowledgement with deletion/stop. A slow
             # client cannot hold the store lock indefinitely while receiving it.
             self.connection.settimeout(3)
@@ -568,29 +642,71 @@ class AuthHandler(BaseHTTPRequestHandler):
                 self._sse({'type': 'session_meta', 'metadata': saved, 'actions': saved.get('actions', []),
                            'used_evidence_ids': used_ids, 'claim_checks': saved.get('claim_checks', {}),
                            'used_memories': saved.get('used_memories', []), 'temporary': temporary})
+                store.end_stream(user['user_id'], tid, stream_token)
                 self._sse({'type': 'done', 'steps': done_steps, 'thread_id': tid, 'temporary': temporary})
 
         except Exception as exc:
+            user_cancelled = bool(getattr(exc, 'cancelled', False) or getattr(exc, 'deleted', False))
             failure_reason = 'cancelled' if isinstance(exc, (BrokenPipeError, ConnectionResetError)) or getattr(exc,'cancelled',False) else failure_code(str(exc))
-            try:
-                self._sse({"type": "error", "error": str(exc)[:300], 'deleted': getattr(exc, 'deleted', False), 'cancelled': getattr(exc, 'cancelled', False)})
-            except OSError:
-                pass
+            pending_error = {"type": "error", "error": str(exc)[:300], 'code': getattr(exc, 'code', 'generation_failed'),
+                             'deleted': getattr(exc, 'deleted', False), 'cancelled': getattr(exc, 'cancelled', False)}
         finally:
-            if not temporary and not recorded and metadata.get('title') and failure_reason != 'cancelled':
+            if stream_iter is not None and hasattr(stream_iter, 'close'):
+                try: stream_iter.close()
+                except Exception: pass
+            try:
+                charge = self.server.points.settle(reservation['request_id'], delivered=delivered,
+                                                   cancelled=user_cancelled, failure=not delivered and not user_cancelled)
+                if not charge_notified:
+                    self._sse({'type': 'usage_pending' if charge['state'] == 'usage_pending' else 'settled',
+                               'charge': self._public_charge(charge), 'wallet': self._stream_wallet(user)})
+            except Exception:
+                pending_error = {'type': 'error', 'code': 'settlement_pending',
+                                 'error': '本轮结算暂未完成，请查询原请求状态，避免重复发送'}
+            finally:
                 try:
-                    with store.lock:
-                        store.assert_active(user['user_id'], tid, stream_token)
-                        self.server.quality.record_run(user['user_id'], tid, uuid.uuid4().hex, 'error', (time.monotonic()-started)*1000, first_content_ms, audit_metadata(getattr(agent, 'config', None), tools), reason=failure_reason)
-                except Exception:
-                    pass
-            if registered: store.end_stream(user['user_id'], tid, stream_token)
-            measure_scope.__exit__(None, None, None)
+                    if not temporary and not recorded and metadata.get('title') and failure_reason != 'cancelled':
+                        try:
+                            with store.lock:
+                                store.assert_active(user['user_id'], tid, stream_token)
+                                self.server.quality.record_run(user['user_id'], tid, uuid.uuid4().hex, 'error', (time.monotonic()-started)*1000, first_content_ms, audit_metadata(getattr(agent, 'config', None), tools), reason=failure_reason)
+                        except Exception:
+                            pass
+                finally:
+                    try:
+                        if registered: store.end_stream(user['user_id'], tid, stream_token)
+                        if pending_error:
+                            if not pending_error.get('cancelled'):
+                                event_id = self._record_risk(pending_error.get('code'), 502)
+                                if event_id: pending_error['risk_event_id'] = event_id
+                            self._sse(pending_error)
+                    finally:
+                        try: charge_scope.__exit__(None, None, None)
+                        finally: measure_scope.__exit__(None, None, None)
+                    try: self.server.migration.resume_pending(limit=2)
+                    except Exception: pass
     def do_GET(self):
+        try:
+            self._get_impl()
+        except (PointsError, SecurityError) as exc:
+            self._json(exc.status, {'ok': False, 'error': str(exc), 'code': exc.code}, {'Retry-After': '60'} if exc.status == 429 else None)
+        except IssueError as exc:
+            self._issue_error(exc)
+        except (TypeError, ValueError, OverflowError):
+            self._json(400, {'ok': False, 'error': '请求参数无效'})
+
+    def _get_impl(self):
         if not self._same_origin_or_reject():
             return
         path=urlparse(self.path).path
-        if path in ("/","/auth"):
+        if self._credits_get(path, parse_qs(urlparse(self.path).query)):
+            return
+        if path in {'/assets/security.js', '/assets/credits.js'}:
+            self._send(200, (WEB_ROOT / path.rsplit('/', 1)[1]).read_bytes(), 'application/javascript; charset=utf-8')
+            return
+        if path == '/':
+            self._send_web_file(WEB_ROOT / 'index.html'); return
+        if path == "/auth":
             self._send_web_file(WEB_ROOT / "auth.html")
             return
         if path in ("/app", "/app/"):
@@ -654,9 +770,16 @@ class AuthHandler(BaseHTTPRequestHandler):
                     self._json(429,{"ok":False,"error":"验证码请求过于频繁"});return
                 self._json(200,self.service.create_math_challenge());return
             data=self._body()
+            if self._credits_post(path, data):
+                return
             if path == "/api/admin/login":
+                if not self._allow_request('admin-login', 20):
+                    self._json(429, {'ok': False, 'error': '请求过于频繁'}, {'Retry-After': '60'}); return
                 captcha_keys = ("math_challenge_id", "math_answer")
-                result = self.service.admin_login(data.get("username", ""), data.get("password", ""), **{key: data.get(key) for key in captcha_keys})
+                result = self.service.admin_login(data.get("username", ""), data.get("password", ""),
+                                                  rate_key=self._source(), otp_code=data.get('otp_code'),
+                                                  require_mfa=self.server.require_admin_mfa,
+                                                  **{key: data.get(key) for key in captcha_keys})
                 if result.get("ok"):
                     token = str(result.pop("session_token", "")); jar = cookies.SimpleCookie(); jar[ADMIN_SESSION_COOKIE] = token
                     jar[ADMIN_SESSION_COOKIE]["path"] = "/"; jar[ADMIN_SESSION_COOKIE]["httponly"] = True; jar[ADMIN_SESSION_COOKIE]["samesite"] = "Lax"; jar[ADMIN_SESSION_COOKIE]["max-age"] = str(self.service.session_ttl)
@@ -668,8 +791,9 @@ class AuthHandler(BaseHTTPRequestHandler):
                 result = self.service.admin_logout(self._admin_token() or ""); expired = ADMIN_SESSION_COOKIE + "=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0" + ("; Secure" if self.server.secure_cookie else "")
                 self._json(200, result, {"Set-Cookie": expired}); return
             if path in ("/api/admin/config", "/api/admin/config/test"):
-                admin = self._admin_required()
+                admin = self._admin_required() if path.endswith('/test') else self._sensitive_admin(data)
                 if not admin: return
+                data = {k: v for k, v in data.items() if k != 'otp_code'}
                 if path.endswith("/test"):
                     self.server.config_store.validate(data)
                     self._json(200, {"ok": True, "message": "配置格式检查通过；未发起外部连接", "config": self.server.config_store.public()}); return
@@ -678,9 +802,12 @@ class AuthHandler(BaseHTTPRequestHandler):
                 self._json(200, {"ok": True, "config": result}); return
             match = re.fullmatch(r"/api/admin/users/(\d+)/(lock|unlock)", path)
             if match:
-                admin = self._admin_required()
+                admin = self._sensitive_admin(data)
                 if not admin: return
-                result = self.service.admin_set_user_lock(int(match.group(1)), match.group(2) == "lock")
+                if set(data) - {'reason', 'operation_id', 'otp_code'}:
+                    raise SecurityError('账户管理字段无效', 400)
+                result = self.service.admin_set_user_lock(int(match.group(1)), match.group(2) == "lock",
+                    admin_id=admin['admin_id'], operation_id=self._operation_id(data), reason=data.get('reason'))
                 self._json(200 if result.get("ok") else 404, result); return
             if path == '/api/agent/feedback':
                 self._agent_feedback(data)
@@ -698,7 +825,17 @@ class AuthHandler(BaseHTTPRequestHandler):
                     return
                 try:
                     tid = validate_thread_id(data.get('thread_id'))
-                    stopped = self.server.issues.stop_stream(user['user_id'], tid, data.get('stream_token'))
+                    with self.server.issues.lock:
+                        owner = user['user_id']
+                        stopped = self.server.issues.stop_stream(owner, tid, data.get('stream_token'))
+                        if not stopped and owner > 0:
+                            for source, source_tid in list(self.server.issues.active_streams):
+                                if source < 0 and source_tid == tid and self.server.points.content_owner(source) == owner:
+                                    stopped = self.server.issues.stop_stream(source, tid, data.get('stream_token'))
+                                    if stopped:
+                                        owner = source
+                                        break
+                        if stopped: self._cancel_unstarted(owner, tid)
                     self._json(200, {'ok': True, 'thread_id': tid, 'stopped': stopped})
                 except IssueError as exc:
                     self._issue_error(exc)
@@ -724,6 +861,12 @@ class AuthHandler(BaseHTTPRequestHandler):
             if path=="/api/auth/logout":
                 x=self.service.logout(self._token() or "");expired=SESSION_COOKIE+"=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0" + ("; Secure" if self.server.secure_cookie else "");self._json(200,x,{"Set-Cookie":expired});return
             self._json(404,{"ok":False,"error":"not found"})
+        except _ChallengeSent:
+            return
+        except IssueError as exc:
+            self._issue_error(exc)
+        except (PointsError, SecurityError) as exc:
+            self._json(exc.status, {'ok': False, 'error': str(exc), 'code': exc.code}, {'Retry-After': '60'} if exc.status == 429 else None)
         except (AuthError,ValueError,json.JSONDecodeError) as exc:self._json(400,{"ok":False,"error":str(exc)[:300]})
         except Exception:self._json(500,{"ok":False,"error":"服务器内部错误"})
 
@@ -741,37 +884,138 @@ class AuthHandler(BaseHTTPRequestHandler):
             return
         try:
             tid = validate_thread_id(parse_qs(urlparse(self.path).query).get('thread_id', [''])[0])
-            self.server.issues.delete(user['user_id'], tid, self.server.agent)
+            with self.server.issues.lock:
+                self._content_available(user, tid)
+                self.server.issues.delete(user['user_id'], tid, self.server.agent)
             self._json(200, {'ok': True, 'thread_id': tid, 'deleted': True})
         except IssueError as exc:
             self._issue_error(exc)
+        except (PointsError, SecurityError) as exc:
+            self._json(exc.status, {'ok': False, 'error': str(exc), 'code': exc.code})
 
 class AuthHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
     request_queue_size = 32
 
-    def __init__(self, address, handler, service, agent, config_store):
+    def __init__(self, address, handler, service, agent, config_store, *, security_test_mode=False):
         super().__init__(address, handler)
         self.auth_service = service
         self.agent = agent
         self.config_store = config_store
         self.issues = IssueStore(agent.config.db_path, agent.config.session_dir)
         self.quality = QualityStore(agent.config.db_path)
+        self.points = PointsStore(service.db_path)
+        self.billing_admin = BillingAdminStore(self.points)
+        self.risk_audit = RiskAuditStore(service.db_path, service.security_key)
+        self.security_config = SecurityConfigStore(service.db_path, service.security_key)
+        self.security_appeals = SecurityAppealsStore(service.db_path, service.security_key)
+        with self.points._connect() as conn:
+            conn.execute('''CREATE TABLE IF NOT EXISTS http_generation_operations(
+                principal TEXT NOT NULL,client_key TEXT NOT NULL,payload_digest TEXT NOT NULL,
+                context_digest TEXT NOT NULL,request_id TEXT,thread_id TEXT NOT NULL,temporary INTEGER NOT NULL,
+                turn_id TEXT,created REAL NOT NULL,PRIMARY KEY(principal,client_key))''')
+            conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_http_request ON http_generation_operations(request_id)')
+            conn.execute('''CREATE TABLE IF NOT EXISTS http_auth_operations(
+                principal TEXT NOT NULL,action TEXT NOT NULL,operation_id TEXT NOT NULL,digest TEXT NOT NULL,
+                response TEXT,created REAL NOT NULL,PRIMARY KEY(principal,action,operation_id))''')
         self.rate_counts = {}
         self.rate_lock = threading.Lock()
         self.stream_slots = threading.BoundedSemaphore(4)
+        self.connection_slots = threading.BoundedSemaphore(64)
         self.auth_cleanup_interval = 60.0
         self._last_auth_cleanup = 0.0
         try:
-            self.secure_cookie = not ipaddress.ip_address(str(address[0])).is_loopback
+            self.secure_cookie = not ipaddress.ip_address(str(self.server_address[0])).is_loopback
         except ValueError:
-            self.secure_cookie = str(address[0]).lower() not in {"localhost", ""}
+            self.secure_cookie = True
+        self._bound_secure = self.secure_cookie
+        self._security_test_mode_requested = security_test_mode
+        security_settings = self.security_config.load()
+        hostname = security_settings.get('hostname', '')
+        try: local_hostname = ipaddress.ip_address(hostname).is_loopback
+        except ValueError: local_hostname = hostname == 'localhost'
+        self.secure_cookie = self.secure_cookie or bool(hostname and not local_hostname)
+        self.require_admin_mfa = self.secure_cookie
+        self.allowed_hosts = {'127.0.0.1', 'localhost', '::1', str(address[0]).lower()}
+        if hostname:
+            if not re.fullmatch(r'[a-z0-9][a-z0-9.-]{0,252}', hostname):
+                self.server_close()
+                raise ValueError('公网域名配置无效')
+            self.allowed_hosts.add(hostname)
+        if security_test_mode and self.secure_cookie:
+            self.server_close()
+            raise ValueError('测试验证器只能用于显式loopback隔离服务')
+        self.trusted_proxies = tuple(x.strip() for x in os.environ.get('MAO_TRUSTED_PROXIES', '').split(',') if x.strip())
+        self.security = SecurityService(service.db_path, service.security_key,
+                                        site_key=security_settings.get('site_key', ''),
+                                        turnstile_secret=security_settings.get('secret', ''),
+                                        hostname=hostname, test_mode=security_test_mode)
+        self.migration = GuestMigrationStore(self.points, self.issues, self.agent)
+        self.billing_input_cap = max(8192, min(2_000_000, int(os.environ.get('MAO_BILLING_INPUT_CAP', '131072'))))
+        self.registration_daily_cap = max(1, min(10000, int(os.environ.get('MAO_REGISTRATION_DAILY_CAP', '500'))))
+        search_bound = security_settings.get('search_call_bound_cny')
+        self.search_cash_bound = None
+        if search_bound:
+            from decimal import Decimal
+            value = Decimal(search_bound)
+            if not value.is_finite() or value <= 0 or value > 1000:
+                raise ValueError('搜索费用上界无效')
+            self.search_cash_bound = str(value)
+        self.recover_deliveries()
+
+    def reload_security_settings(self):
+        settings = self.security_config.load()
+        hostname = settings.get('hostname', '')
+        try: local = ipaddress.ip_address(hostname).is_loopback
+        except ValueError: local = hostname == 'localhost'
+        self.secure_cookie = self._bound_secure or bool(hostname and not local)
+        self.require_admin_mfa = self.secure_cookie
+        self.allowed_hosts = {'127.0.0.1', 'localhost', '::1', str(self.server_address[0]).lower()}
+        if hostname: self.allowed_hosts.add(hostname)
+        self.security.site_key = settings.get('site_key', '')
+        self.security.turnstile_secret = settings.get('secret', '')
+        self.security.hostname = hostname
+        self.security.test_mode = bool(self._security_test_mode_requested and not self.secure_cookie)
+        self.search_cash_bound = settings.get('search_call_bound_cny') or None
+
+    def recover_deliveries(self, limit=100, request_id=None):
+        """Retry durable delivery receipts before stale-worker compensation."""
+        with self.points._connect() as conn:
+            query = '''SELECT r.id FROM points_requests r JOIN http_generation_operations h
+                ON h.request_id=r.id WHERE h.turn_id IS NOT NULL AND h.temporary=0
+                AND r.state IN ('reserved','running')'''
+            args = []
+            if request_id is not None:
+                query += ' AND r.id=?'; args.append(request_id)
+            rows = conn.execute(query + ' ORDER BY r.created LIMIT ?', (*args, limit)).fetchall()
+        for row in rows:
+            self.points.settle(row['id'], delivered=True)
 
     def get_request(self):
         request, client_address = super().get_request()
         request.settimeout(10)
         return request, client_address
+
+    def process_request(self, request, client_address):
+        if not self.connection_slots.acquire(blocking=False):
+            try:
+                request.sendall(b'HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\nRetry-After: 60\r\n\r\n')
+            except OSError:
+                pass
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self.connection_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.connection_slots.release()
 
     def service_actions(self):
         """Periodically discard expired authentication state while serving."""
@@ -781,13 +1025,21 @@ class AuthHTTPServer(ThreadingHTTPServer):
         self._last_auth_cleanup = now
         try:
             self.auth_service.cleanup()
+            self.security.cleanup()
+            self.risk_audit.cleanup()
+            self.security_appeals.cleanup()
+            self.recover_deliveries()
+            expired = self.points.cleanup()
+            self.migration.resume_pending()
+            for storage_id in expired.get('stale_guest_storage_ids', []):
+                self.migration.cleanup_stale(storage_id)
         except Exception:
             # Cleanup is maintenance; a transient SQLite error must not stop
             # the HTTP server from serving existing sessions.
             pass
 
 
-def make_server(host="127.0.0.1", port=8765, db=None):
+def make_server(host="127.0.0.1", port=8765, db=None, *, security_test_mode=False):
     """Build (but do not start) a server, useful for embedding and tests."""
     db_path = Path(db) if db else None
     service = AuthService(db_path)
@@ -796,7 +1048,7 @@ def make_server(host="127.0.0.1", port=8765, db=None):
     if db_path:
         config.db_path = db_path
         config.session_dir = db_path.parent / ".agent-sessions"
-    return AuthHTTPServer((host, int(port)), AuthHandler, service, Agent(config), config_store)
+    return AuthHTTPServer((host, int(port)), AuthHandler, service, Agent(config), config_store, security_test_mode=security_test_mode)
 
 
 def serve(host="127.0.0.1", port=8765, db=None):

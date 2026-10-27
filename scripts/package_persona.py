@@ -6,7 +6,7 @@ ROOT=Path(__file__).resolve().parents[1]
 output=ROOT/'毛泽东人物skill可用版.zip'
 SAFE_DATA_FILES={'verified_early.jsonl','verified_late.jsonl','verified_timeline.jsonl','quote_event_links.jsonl'}
 EXCLUDED_DIRS={'sessions','real_runs','runs','dialogue_runs','.agent-sessions','__pycache__','.git'}
-SENSITIVE_SUFFIXES=('.db','.db-wal','.db-shm','.auth-secret','.provider-secrets')
+SENSITIVE_SUFFIXES=('.db','.db-wal','.db-shm','.auth-secret','.provider-secrets','.admin-totp')
 
 
 def is_safe_file(path: Path, root: Path = ROOT, *, data_only: bool = False) -> bool:
@@ -15,11 +15,11 @@ def is_safe_file(path: Path, root: Path = ROOT, *, data_only: bool = False) -> b
         relative = path.relative_to(root)
     except ValueError:
         return False
-    if any(part in EXCLUDED_DIRS for part in relative.parts):
+    if any(part in EXCLUDED_DIRS or '.security-config' in part for part in relative.parts):
         return False
     if path.name == 'config.json' or (path.name.startswith('.env') and path.name != '.env.example'):
         return False
-    if any(part in path.name for part in ('.auth-secret', '.provider-secrets', '.session-secret')):
+    if any(part in path.name for part in ('.auth-secret', '.provider-secrets', '.session-secret', '.admin-totp')):
         return False
     if path.name.endswith(SENSITIVE_SUFFIXES):
         return False

@@ -12,6 +12,8 @@
 - 有出处的原则与方法解释，保留历史条件、适用限制及引用定位。
 - 议题继续、行动状态、用户授权的记忆与临时对话。
 - 账户隔离、议题管理、复制导出与删除；模型和 Firecrawl 配置由管理员管理。
+- 免登录访客对话、一次性体验积分、账户每日积分与注册后记录归入。
+- 服务端报价、冻结和实际用量结算；后台管理价格版本、费用预算、退款和审计。
 
 本轮实现对照见 [方案落地记录](docs/plan-implementation.md)，试用流程见 [成人试用执行材料](docs/pilot-study.md)。
 
@@ -38,7 +40,9 @@ export FIRECRAWL_API_KEY='your-firecrawl-key'
 python3 -m agent.auth_server --host 127.0.0.1 --port 8877
 ```
 
-打开 [教员登录页](http://127.0.0.1:8877/auth)，注册并登录即可使用。也可复制 `agent/config.example.json` 为被 Git 忽略的 `agent/config.json`，填写服务参数。环境变量优先；支持的本机环境还可使用 Keychain。
+打开 [教员工作台](http://127.0.0.1:8877/app)，无需登录即可进入。首次使用赠送积分前需要完成服务端人机验证；注册后每天获得100积分，当天剩余在北京时间零点失效。100积分对应0.10元，实际按模型用量扣除。也可复制 `agent/config.example.json` 为被 Git 忽略的 `agent/config.json`，填写服务参数。环境变量优先；支持的本机环境还可使用 Keychain。
+
+正式对话还需要配置 Turnstile、已核验的模型价格版本和平台每日费用上限；联网搜索另需搜索费用上界。缺少配置会明确提示并停止外部调用。配置、计费规则和恢复流程见 [积分与安全部署说明](docs/credits-and-security.md)。
 
 首次需要管理员后台时，在启动前设置自己的 `MAO_ADMIN_USERNAME` 和 `MAO_ADMIN_PASSWORD`，访问 `/admin-login`。密钥的读取与保存方式见 [管理说明](docs/admin_usage.md)。不要把 `.env`、本机配置、账户数据库、会话或密钥提交到仓库。
 
@@ -60,9 +64,12 @@ npx playwright install chromium
 E2E_BROWSER_CHANNEL=bundled npm run test:ui
 E2E_BROWSER_CHANNEL=bundled npm run test:ui:plan
 E2E_BROWSER_CHANNEL=bundled npm run test:ui:legacy
+E2E_BROWSER_CHANNEL=bundled npm run test:ui:credits
+E2E_BROWSER_CHANNEL=bundled npm run test:ui:billing
+E2E_BROWSER_CHANNEL=bundled npm run test:ui:billing-http
 ```
 
-产品浏览器测试使用独立临时资料库、测试账户与确定性模型替身，不读写真实密钥。完整 OCR 集成测试在本机资产齐备时执行；公开克隆会明确跳过这部分可选集成用例。
+产品浏览器测试使用独立临时资料库、测试账户与确定性模型替身，不读写真实密钥。`test:ui:billing-http`通过真实HTTP、认证和SQLite验证草稿恢复、退款幂等、双人审批、模型/搜索费用对账、账本重建及申诉复核；需要时可用`E2E_PYTHON`指定Python解释器。完整 OCR 集成测试在本机资产齐备时执行；公开克隆会明确跳过这部分可选集成用例。
 
 真实服务验收会消耗所配置供应商额度，仅在明确需要时执行 `npm run test:live` 或 `npm run test:live:product`。流程通过不等于所有建议语义正确或已证明长期陪伴效果，仍需要对有限样例作内容审阅。
 

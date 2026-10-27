@@ -16,6 +16,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import tempfile
 import uuid
 from collections import defaultdict, deque
 from contextlib import contextmanager
@@ -503,7 +504,9 @@ class Agent:
         if not network_enabled:
             return {"query": query, "results": [], "untrusted": True, "blocked": True,
                     "status": "blocked", "notice": "本轮已关闭联网搜索，未执行网页请求。"}
-        result = self.firecrawl.search(query, limit=limit or self.config.web_limit)
+        from .billing_runtime import billed_search
+        with billed_search():
+            result = self.firecrawl.search(query, limit=limit or self.config.web_limit)
         persisted = _PERSIST_WEB_CACHE.get()
         if persisted:
             self.knowledge.store_web_sources(result)
@@ -1087,11 +1090,28 @@ class Agent:
         except OSError:
             pass
         path = self.config.session_dir / (session_id + ".json")
-        path.write_text(json.dumps({"session_id": session_id, "messages": messages, "metadata": metadata or {}}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        encoded = json.dumps({"session_id": session_id, "messages": messages, "metadata": metadata or {}}, ensure_ascii=False, indent=2) + "\n"
+        staging = None
         try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
+            # Publish only a complete, synchronized private snapshot. Failure
+            # before replace leaves the last conversation intact.
+            with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=self.config.session_dir,
+                                             prefix='.' + session_id + '-', suffix='.tmp', delete=False) as handle:
+                staging = Path(handle.name)
+                os.chmod(staging, 0o600)
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(staging, path)
+            staging = None
+            try:
+                directory = os.open(self.config.session_dir, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+                try: os.fsync(directory)
+                finally: os.close(directory)
+            except OSError:
+                pass
+        finally:
+            if staging is not None: staging.unlink(missing_ok=True)
         try:
             conn = db_connect(self.config.db_path); ensure_schema(conn)
             with conn:
@@ -1116,7 +1136,10 @@ class Agent:
                 for message in messages:
                     role, content = message.get('role', 'user'), message.get('content', '')
                     retained = previous[(role, content)].popleft() if previous[(role, content)] else ([], [])
-                    message_id = record_message(conn, session_id, role, content, message.get('evidence_ids', retained[0]), {'source': 'session_export'})
+                    meta = {'source': 'session_export'}
+                    if isinstance(message.get('turn_id'), str) and re.fullmatch(r'[a-f0-9]{32}', message['turn_id']):
+                        meta['turn_id'] = message['turn_id']
+                    message_id = record_message(conn, session_id, role, content, message.get('evidence_ids', retained[0]), meta)
                     record_citations(conn, message_id, retained[1])
             conn.close()
         except Exception:
@@ -1128,7 +1151,7 @@ class Agent:
         session_id = self._safe_session_id(session_id)
         path = self.config.session_dir / (session_id + ".json")
         if not path.is_file():
-            return []
+            return self._session_db_copy(session_id)[0]
         try:
             os.chmod(self.config.session_dir, 0o700)
             os.chmod(path, 0o600)
@@ -1137,18 +1160,43 @@ class Agent:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             messages = data.get("messages", [])
-            return messages if isinstance(messages, list) else []
-        except (OSError, json.JSONDecodeError):
-            return []
+            return messages if isinstance(messages, list) else self._session_db_copy(session_id)[0]
+        except (OSError, ValueError, AttributeError):
+            return self._session_db_copy(session_id)[0]
+
+    def _session_db_copy(self, session_id):
+        """Recover only the exact validated principal-prefixed session."""
+        conn = None
+        try:
+            conn = db_connect(self.config.db_path)
+            row = conn.execute('SELECT metadata_json FROM sessions WHERE session_id=?', (session_id,)).fetchone()
+            if not row: return [], {}
+            meta = json.loads(row['metadata_json'] or '{}')
+            messages = []
+            for item in conn.execute('''SELECT role,content,evidence_ids_json,metadata_json FROM
+                    (SELECT message_id,role,content,evidence_ids_json,metadata_json FROM messages
+                     WHERE session_id=? ORDER BY message_id DESC LIMIT 1000) ORDER BY message_id''', (session_id,)):
+                value = {'role': item['role'], 'content': item['content'], 'evidence_ids': json.loads(item['evidence_ids_json'] or '[]')}
+                details = json.loads(item['metadata_json'] or '{}')
+                if isinstance(details, dict) and isinstance(details.get('turn_id'), str) and re.fullmatch(r'[a-f0-9]{32}', details['turn_id']):
+                    value['turn_id'] = details['turn_id']
+                messages.append(value)
+            return messages, meta if isinstance(meta, dict) else {}
+        except (OSError, ValueError, sqlite3.Error):
+            return [], {}
+        finally:
+            if conn is not None: conn.close()
 
     def session_metadata(self, session_id: str) -> Dict[str, Any]:
         session_id = self._safe_session_id(session_id)
         path = self.config.session_dir / (session_id + ".json")
         if not path.is_file():
-            return {}
+            return self._session_db_copy(session_id)[1]
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data.get('messages'), list):
+                return self._session_db_copy(session_id)[1]
             value = data.get("metadata", {})
             return value if isinstance(value, dict) else {}
-        except (OSError, json.JSONDecodeError):
-            return {}
+        except (OSError, ValueError, AttributeError):
+            return self._session_db_copy(session_id)[1]

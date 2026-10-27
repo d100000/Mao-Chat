@@ -15,7 +15,7 @@ SKILL = BUNDLE / 'mao-primary-sources'
 VERSION = '2.1.0'
 SAFE_DATA_FILES = {'verified_early.jsonl', 'verified_late.jsonl', 'verified_timeline.jsonl', 'quote_event_links.jsonl'}
 EXCLUDED_DIRS = {'sessions', 'real_runs', 'runs', 'dialogue_runs','.agent-sessions', '__pycache__', '.git'}
-SENSITIVE_SUFFIXES = ('.db', '.db-wal', '.db-shm', '.auth-secret', '.provider-secrets')
+SENSITIVE_SUFFIXES = ('.db', '.db-wal', '.db-shm', '.auth-secret', '.provider-secrets', '.admin-totp')
 
 
 def sha256(path):
@@ -28,11 +28,11 @@ def sha256(path):
 
 def is_safe_file(path, *, data_only=False):
     """Return whether a file is safe to include in a portable bundle."""
-    if any(part in EXCLUDED_DIRS for part in path.parts):
+    if any(part in EXCLUDED_DIRS or '.security-config' in part for part in path.parts):
         return False
     if path.name == 'config.json' or (path.name.startswith('.env') and path.name != '.env.example'):
         return False
-    if any(part in path.name for part in ('.auth-secret', '.provider-secrets', '.session-secret')):
+    if any(part in path.name for part in ('.auth-secret', '.provider-secrets', '.session-secret', '.admin-totp')):
         return False
     if path.name.endswith(SENSITIVE_SUFFIXES) or path.name in {'ocr', '.DS_Store'}:
         return False
@@ -127,7 +127,7 @@ def build():
 
 def finalize():
     ignored = {'package-manifest.json', '.installation.json'}
-    files = [p for p in SKILL.rglob('*') if p.is_file() and '__pycache__' not in p.parts and p.name not in ignored and p.suffix != '.pyc']
+    files = [p for p in SKILL.rglob('*') if is_safe_file(p) and p.name not in ignored]
     manifest = {'package_id': 'mao-primary-sources', 'package_version': VERSION,
                 'created_date': '2026-10-25', 'files': [
                     {'path': p.relative_to(SKILL).as_posix(), 'bytes': p.stat().st_size, 'sha256': sha256(p)} for p in sorted(files)]}
@@ -136,18 +136,19 @@ def finalize():
     # Skip disposable interpreter caches in every package and archive.
     for cache in BUNDLE.rglob('__pycache__'):
         shutil.rmtree(cache)
-    top = [p for p in BUNDLE.rglob('*') if p.is_file() and p.name != 'SHA256SUMS.txt']
+    top = [p for p in BUNDLE.rglob('*') if is_safe_file(p) and p.name != 'SHA256SUMS.txt']
     (BUNDLE / 'SHA256SUMS.txt').write_text(''.join(sha256(p) + '  ' + p.relative_to(BUNDLE).as_posix() + '\n' for p in sorted(top)), encoding='utf-8')
     output = ROOT / (BUNDLE.name + '.zip')
+    archive_files = sorted(p for p in BUNDLE.rglob('*') if is_safe_file(p))
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
-        for path in sorted(p for p in BUNDLE.rglob('*') if p.is_file()):
+        for path in archive_files:
             archive.write(path, Path(BUNDLE.name) / path.relative_to(BUNDLE))
     with zipfile.ZipFile(output) as archive:
         if archive.testzip() is not None:
             raise ValueError('压缩包CRC检查失败。')
     output.with_suffix('.zip.sha256').write_text(sha256(output) + '  ' + output.name + '\n', encoding='utf-8')
-    print(json.dumps({'folder': str(BUNDLE), 'archive': str(output), 'files': len(top) + 1,
-                      'uncompressed_bytes': sum(p.stat().st_size for p in BUNDLE.rglob('*') if p.is_file()),
+    print(json.dumps({'folder': str(BUNDLE), 'archive': str(output), 'files': len(archive_files),
+                      'uncompressed_bytes': sum(p.stat().st_size for p in archive_files),
                       'archive_bytes': output.stat().st_size}, ensure_ascii=False, indent=2))
 
 

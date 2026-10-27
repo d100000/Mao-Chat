@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Iterator, List, Optional
 from urllib import error, request
 from .telemetry import record_model_call
+from .billing_runtime import before_model_request
 
 
 class LLMError(RuntimeError):
@@ -165,6 +166,8 @@ class OpenAICompatibleClient:
             payload["tool_choice"] = "auto"
         if response_format:
             payload["response_format"] = response_format
+        if payload['stream']:
+            payload['stream_options'] = {'include_usage': True}
         return payload
 
     def _request(self, payload):
@@ -174,6 +177,7 @@ class OpenAICompatibleClient:
         req.add_header("Authorization", "Bearer " + credential)
         req.add_header("Content-Type", "application/json")
         req.add_header("Accept", "text/event-stream" if payload.get("stream") else "application/json")
+        before_model_request(payload, self.config)
         try:
             return self.opener(req, timeout=self.config.timeout_s)
         except error.HTTPError as exc:
@@ -185,18 +189,20 @@ class OpenAICompatibleClient:
 
     def stream_chat(self, messages, tools=None, response_format=None) -> Iterator[Dict[str, Any]]:
         started = time.monotonic()
-        usage, status = None, 'error'
+        usage, status, provider_id = None, 'error', None
         try:
             with self._request(self._payload(messages, tools, response_format, stream=True)) as response:
                 for event in iter_sse(response):
                     raw = event.get('raw') or event.get('data') or {}
                     if isinstance(raw, dict) and isinstance(raw.get('usage'), dict):
                         usage = raw['usage']
+                    if isinstance(raw, dict) and isinstance(raw.get('id'), str):
+                        provider_id = raw['id']
                     event.setdefault("elapsed_s", time.monotonic() - started)
                     yield event
             status = 'ok'
         finally:
-            record_model_call(usage, (time.monotonic() - started) * 1000, status)
+            record_model_call(usage, (time.monotonic() - started) * 1000, status, provider_request_id=provider_id)
 
     def chat(self, messages, tools=None, response_format=None) -> LLMResponse:
         started = time.monotonic()
@@ -224,7 +230,7 @@ class OpenAICompatibleClient:
             status = 'ok'
             return LLMResponse(message.get("content") or "", message.get("reasoning_content") or message.get("reasoning") or "", message.get("tool_calls") or [], data, time.monotonic() - started)
         finally:
-            record_model_call(data.get('usage'), (time.monotonic() - started) * 1000, status)
+            record_model_call(data.get('usage'), (time.monotonic() - started) * 1000, status, provider_request_id=data.get('id'))
 
     @staticmethod
     def _merge_tool_deltas(deltas):

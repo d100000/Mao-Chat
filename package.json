@@ -9,6 +9,9 @@
     "test:ui": "node tests/e2e/product.mjs",
     "test:ui:plan": "node tests/e2e/plan.mjs",
     "test:ui:legacy": "node tests/e2e/run.mjs",
+    "test:ui:credits": "node tests/e2e/credits.mjs",
+    "test:ui:billing": "node tests/e2e/billing-ops.mjs",
+    "test:ui:billing-http": "node tests/e2e/billing-ops-http.mjs",
     "test:live": "node tests/e2e/consult.mjs",
     "test:live:plan": "python3 scripts/live_plan_check.py --run",
     "test:live:product": "python3 scripts/live_product_check.py --run"

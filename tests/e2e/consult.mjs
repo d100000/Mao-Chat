@@ -1,3 +1,4 @@
+import {confirmGeneration,readyAuth,guestLogout} from './helpers/credits.mjs';
 /** Real-provider acceptance for evidence-based dialogue consultation. */
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -21,7 +22,7 @@ async function status(){const r=await fetch(base+'/__live_test/status');assert.o
 async function capture(name){await page.waitForTimeout(250);await page.screenshot({path:path.join(output,name+'.png'),fullPage:true});}
 async function report(running=true){await writeFile(path.join(output,'report.json'),JSON.stringify({provider,model:snapshot?.model,running,passed:checks.filter(x=>x.status==='passed').length,failed:checks.filter(x=>x.status==='failed').length,checks,requests:snapshot?.requests||[]},null,2));await writeFile(path.join(output,'answers.json'),JSON.stringify({provider,answers},null,2));}
 async function step(name,fn){const start=Date.now();try{const details=await fn();checks.push({name,status:'passed',elapsed_ms:Date.now()-start,...details});console.log('PASS '+name);}catch(e){checks.push({name,status:'failed',elapsed_ms:Date.now()-start,error:safeError(e)});await capture('failure').catch(()=>{});throw e;}finally{snapshot=await status().catch(()=>snapshot);await report();}}
-async function captcha(){await page.waitForFunction(()=>document.querySelector('#math')?.src.startsWith('data:'));const src=await page.locator('#math').getAttribute('src');const m=Buffer.from(src.split(',')[1],'base64').toString().match(/>(\d+) ([+−\-×]) (\d+) = \?<\/text>/);assert.ok(m);const a=+m[1],b=+m[3];await page.locator('#mathAnswer').fill(String(m[2]==='+'?a+b:m[2]==='×'?a*b:a-b));}
+async function captcha(){await readyAuth(page);}
 function evidenceIds(value,ids=new Set()){
  if(!value||typeof value!=='object')return ids;
  if(Array.isArray(value)){for(const item of value)evidenceIds(item,ids);return ids;}
@@ -37,7 +38,7 @@ function evidenceIds(value,ids=new Set()){
 async function ask(label,question){
  const index=await page.evaluate(()=>window.__consultStreams?.length||0),start=Date.now();
  const responsePromise=page.waitForResponse(r=>r.url().endsWith('/api/agent/stream')&&r.request().method()==='POST',{timeout});
- await page.locator('#question').fill(question);await page.locator('#sendButton').click();assert.equal((await responsePromise).status(),200);
+ await page.locator('#question').fill(question);await confirmGeneration(page,{timeout:30000});assert.equal((await responsePromise).status(),200);
  await page.waitForFunction(index=>window.__consultStreams?.[index]?.finished,index,{timeout});
  const captured=await page.evaluate(index=>window.__consultStreams[index],index);assert.ok(!captured.error,captured.error);
  const events=captured.text.split(/\r?\n\r?\n/).map(x=>x.split(/\r?\n/).filter(l=>l.startsWith('data:')).map(l=>l.slice(5).trim()).join('\n')).filter(Boolean).map(x=>JSON.parse(x));
@@ -66,7 +67,7 @@ try{
  await step('restored consultation retains the goal and supports the next experiment',async()=>{await page.reload();await page.waitForFunction(()=>!document.querySelector('#question')?.disabled);assert.equal(await page.locator('#modeSelect [data-mode=consult]').getAttribute('aria-pressed'),'true');assert.ok(await page.locator('.message.assistant').count());assert.match(await page.locator('#analysisBody').innerText(),/待你确认/);assert.match(await page.locator('#analysisBody').innerText(),/现有|老客户|留存|续费|稳定|保留/);const r=await ask('follow-through','请只根据我们已经说过的情况，用不超过180字帮我定出本周一个小实验，并写清用什么信号判断要继续还是调整。');assert.ok(r.trace.history_count>=6);assert.match(JSON.stringify(r.analysis_events.at(-1)),/现有|老客户|留存|续费|稳定|保留|留下/);assert.match(r.answer,/稳定|现有|留存|续费|老客户|留下|续用|更稳/);assert.match(r.answer,/指标|次数|数量|记录|反馈|信号|是否|检查|比率|比例/);return r;});
  await step('legacy research mode still returns historical evidence',async()=>{await page.locator('#newChat').click();await selectMode('research');const r=await ask('research-regression','请先检索本地《实践论》，用不超过100字说明实践与认识的关系，并标出证据ID或PDF页码。');assert.equal(r.trace.mode,'research');assert.ok(r.tool_names.some(x=>['local_search','trace_quote','local_vector_search'].includes(x)));return r;});
  await step('consultation layout works on a narrow screen',async()=>{await page.locator('#newChat').click();await selectMode('consult');await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await capture('mobile');});
- await step('logout revokes the live test session and browser has no uncaught errors',async()=>{await page.setViewportSize({width:1440,height:1000});await page.locator('#logout').click();await page.waitForURL('**/auth');assert.equal((await page.request.get(base+'/api/auth/me')).status(),401);assert.deepEqual(browserErrors,[]);});
+ await step('logout revokes the live test session and browser has no uncaught errors',async()=>{await page.setViewportSize({width:1440,height:1000});await guestLogout(page,base);assert.deepEqual(browserErrors,[]);});
 }catch(e){failure=e;console.error(safeError(e.stack||e));}finally{
  if(base)snapshot=await status().catch(()=>snapshot);await browser?.close();
  if(child){child.kill('SIGINT');await new Promise(resolve=>{child.once('exit',resolve);setTimeout(resolve,5000);});}

@@ -19,6 +19,8 @@ SECRET_PATTERNS = [
 
 def forbidden(path):
     parts = path.parts
+    if any('.security-config' in part for part in parts):
+        return True
     if path.as_posix() == 'scripts/ocr':
         return True
     if any(p in {'tmp','runtime','node_modules','__pycache__','.venv','.agent-sessions'} for p in parts):
@@ -29,7 +31,7 @@ def forbidden(path):
         return True
     if path.name == 'config.json' or (path.name.startswith('.env') and path.name != '.env.example'):
         return True
-    return bool(re.search(r'\.(?:db|sqlite)(?:-wal|-shm)?$|\.(?:auth-secret|provider-secrets|session-secret)(?:\..*)?$|\.zip$',path.name))
+    return bool(re.search(r'\.(?:db|sqlite)(?:-wal|-shm)?$|\.(?:auth-secret|provider-secrets|session-secret|admin-totp)(?:\..*)?$|\.zip$',path.name))
 
 
 def contains_secret(data):

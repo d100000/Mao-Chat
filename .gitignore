@@ -46,6 +46,8 @@ __pycache__/
 *.provider-secrets*
 *.auth-secret*
 *.session-secret*
+*.admin-totp*
+*.security-config/
 .venv/
 
 # HTTP session snapshots for an explicit database path

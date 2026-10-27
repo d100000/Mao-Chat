@@ -29,13 +29,10 @@ def make_test_server(port=8876, state_dir=None):
     state.mkdir(parents=True, exist_ok=True)
     db = state / 'agent.db'
     if not db.exists():
-        source_db = ROOT / 'data/mao_agent.db'
-        if source_db.is_file():
-            with sqlite3.connect(source_db) as source, sqlite3.connect(db) as target:
-                source.backup(target)
-        else:
-            from scripts.bootstrap_library import bootstrap
-            bootstrap(db)
+        # Build only the repository's public evidence. Never copy production
+        # account, wallet, credential, challenge or conversation tables.
+        from scripts.bootstrap_library import bootstrap
+        bootstrap(db)
         # The application state stays independent of the real project/user.
         with sqlite3.connect(db) as conn:
             conn.execute('PRAGMA foreign_keys=OFF')
@@ -58,7 +55,21 @@ def make_test_server(port=8876, state_dir=None):
         def _secret_value(self, key, service, env_name): return 'test-provider-placeholder'
 
     class DeterministicClient:
+        def __init__(self, config):
+            self.config = config
+
         def stream_chat(self, messages, tools=None, response_format=None):
+            from agent.billing_runtime import before_model_request
+            from agent.telemetry import record_model_call
+            before_model_request({'messages': messages, 'tools': tools or [], 'max_tokens': self.config.max_tokens}, self.config)
+            status = 'error'
+            try:
+                yield from self._events(messages, tools, response_format)
+                status = 'ok'
+            finally:
+                record_model_call({'prompt_tokens': 1000, 'completion_tokens': 150}, 1, status)
+
+        def _events(self, messages, tools=None, response_format=None):
             latest_user = max(i for i, m in enumerate(messages) if m.get('role') == 'user')
             question = str(messages[latest_user].get('content', ''))
             if 'e2e-error' in question:
@@ -124,7 +135,7 @@ def make_test_server(port=8876, state_dir=None):
 
     class TestAgent(Agent):
         def __init__(self, config):
-            super().__init__(config, client=DeterministicClient(), firecrawl=FakeFirecrawl())
+            super().__init__(config, client=DeterministicClient(config.llm), firecrawl=FakeFirecrawl())
         def stream(self, question, mode='research', as_of=None, history=None, show_reasoning=False, network_enabled=True):
             requests.append({'question': question, 'mode': mode, 'as_of': as_of, 'network_enabled': network_enabled, 'history_count': len(history or [])})
             yield from super().stream(question, mode, as_of, history, show_reasoning, network_enabled)
@@ -144,7 +155,12 @@ def make_test_server(port=8876, state_dir=None):
     config.db_path = db
     config.corpus_db_path = ROOT / 'corpus/search.sqlite'
     config.session_dir = state / 'sessions'
-    server = auth_server.AuthHTTPServer(('127.0.0.1', int(port)), TestHandler, service, TestAgent(config), store)
+    server = auth_server.AuthHTTPServer(('127.0.0.1', int(port)), TestHandler, service, TestAgent(config), store, security_test_mode=True)
+    server.points.publish_price({'provider': config.llm.provider, 'gateway': config.llm.base_url, 'model': config.llm.model,
+                                 'rates': {key: '0.001' for key in ('input_uncached','cache_read','cache_write','billable_output')},
+                                 'adapter': 'openai', 'cache_read_supported': False, 'cache_write_supported': False})
+    server.points.configure({'daily_cash_limit_cny': '100'})
+    server.search_cash_bound = '0.01'
     return server, state
 
 

@@ -1,0 +1,112 @@
+{
+  "date": "2026-10-28",
+  "scope": "教员 v1.1 访客、积分计费与防滥用实现",
+  "base_commit": "d6fd47b12d1727584847d5af11159edadeffa9f9",
+  "implemented": [
+    "访客内容/钱包/试用资格分离与一次试用",
+    "北京时间每日赠送、到期优先消费、冻结与实际用量结算",
+    "四类token用量归一化及版本价格；平台现金预算与搜索承诺",
+    "注册登录强人机验证、公网管理员TOTP与近期验证",
+    "报价确认、重放及并发保护、断线恢复、停止结算与未知用量期限",
+    "账户归入任务与冲突映射；临时对话与退出隔离",
+    "后台人工验证配置、价格草稿、双人调账、退款与费用对账",
+    "风险事件、人工申诉、账户解除审计、受限账本投影重建",
+    "原子会话保存、精确身份数据库恢复、打包隐私过滤"
+  ],
+  "unit_tests": {
+    "total": 493,
+    "passed": 493,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0
+  },
+  "public_checkout": {
+    "source": "git index in an isolated directory; no local secrets or runtime copied",
+    "bootstrap": "37 evidence cards / 25 quotes / 10 events / 13 methodology rules",
+    "unit_tests": {
+      "total": 493,
+      "passed": 485,
+      "skipped": 8,
+      "failures": 0,
+      "errors": 0
+    },
+    "skip_reason": "8 optional full PDF/OCR integration cases; public curated-data tests run"
+  },
+  "browser_tests": [
+    {
+      "script": "tests/e2e/product.mjs",
+      "passed": 12,
+      "failed": 0,
+      "provider": "deterministic-test-double"
+    },
+    {
+      "script": "tests/e2e/plan.mjs",
+      "passed": 7,
+      "failed": 0,
+      "provider": "deterministic-test-double"
+    },
+    {
+      "script": "tests/e2e/run.mjs",
+      "passed": 17,
+      "failed": 0,
+      "provider": "deterministic-test-double"
+    },
+    {
+      "script": "tests/e2e/credits.mjs",
+      "passed": 13,
+      "failed": 0,
+      "provider": "controlled-http-responses"
+    },
+    {
+      "script": "tests/e2e/billing-ops.mjs",
+      "passed": 11,
+      "failed": 0,
+      "provider": "controlled-http-responses"
+    },
+    {
+      "script": "tests/e2e/billing-ops-http.mjs",
+      "passed": 8,
+      "failed": 0,
+      "provider": "deterministic-test-double"
+    }
+  ],
+  "browser_total": 68,
+  "frontend_dom_tests": 24,
+  "real_gateway_probe": {
+    "host": "api.bob-api.com",
+    "model": "deepseek-v4.1-flash",
+    "transport": "streaming",
+    "answer_received": true,
+    "provider_reference_received": true,
+    "usage_sample": {
+      "prompt_tokens": 1619,
+      "completion_tokens": 4,
+      "prompt_cache_hit_tokens": 1408
+    },
+    "normalized_buckets": {
+      "input_uncached": 211,
+      "cache_read": 1408,
+      "cache_write": 0,
+      "billable_output": 4
+    },
+    "price_verified": false,
+    "production_prices_seeded": false
+  },
+  "local_service": {
+    "updated": true,
+    "url": "http://127.0.0.1:8877/app",
+    "private_database_backup": true
+  },
+  "configuration": "Turnstile keys/domain, model CNY rates, platform daily budget and search cost bound are entered manually by an administrator; missing configuration fails closed.",
+  "release_inventory": {
+    "files": 181,
+    "findings": 0,
+    "scope": "staged Git contents including DOCX XML; credentials, private state, paths and size checks"
+  },
+  "limits": [
+    "Actual-domain Turnstile and public HTTPS deployment were not exercised.",
+    "A small real gateway response validates that sample usage shape; account-specific prices and all supplier behavior remain operator checks.",
+    "Browser regression uses isolated databases and fake external providers; it does not prove long-term advice quality or production load capacity.",
+    "Clearing every credential or changing devices cannot uniquely identify a person; platform cash limits bound subsidy exposure."
+  ]
+}

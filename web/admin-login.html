@@ -19,31 +19,51 @@
       <form id="form" aria-label="管理员登录" style="margin-top:25px">
         <div class="field"><label for="username">管理员用户名</label><input class="input" id="username" name="username" minlength="3" maxlength="32" autocomplete="username" placeholder="输入管理员用户名" required aria-describedby="usernameHint"><p class="hint" id="usernameHint" hidden>3–32 位字母、数字、下划线或短横线。</p></div>
         <div class="field"><label for="password">密码</label><div class="password-wrap"><input class="input" id="password" name="password" type="password" minlength="8" maxlength="256" autocomplete="current-password" placeholder="输入密码" aria-describedby="passwordHint" required><button class="reveal" type="button" id="reveal" aria-label="显示或隐藏密码" aria-pressed="false">显示</button></div><p class="hint" id="passwordHint" hidden>至少 8 位，请使用你专属的密码。</p></div>
-        <div class="field"><label for="mathAnswer">验证码答案</label><div class="challenge"><img class="captcha-image" id="math" alt="算术验证码，请计算图中算式"><button class="refresh" type="button" id="refresh" aria-label="刷新验证码">换一张</button></div><input class="input" id="mathAnswer" name="math_answer" aria-label="验证码答案" inputmode="numeric" autocomplete="off" placeholder="输入图片中的算式答案" required></div>
+        <div class="field"><label for="otpCode">动态验证码 <small>已启用第二因素时必填</small></label><input class="input" id="otpCode" name="otp_code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="认证器中的6位动态码"></div><div class="field"><label for="mathAnswer">验证码答案</label><div class="challenge"><img class="captcha-image" id="math" alt="算术验证码，请计算图中算式"><button class="refresh" type="button" id="refresh" aria-label="刷新验证码">换一张</button></div><input class="input" id="mathAnswer" name="math_answer" aria-label="验证码答案" inputmode="numeric" autocomplete="off" placeholder="输入图片中的算式答案" required></div>
         <button class="submit" id="submit" type="submit" disabled><span id="submitText">登录管理后台</span><span aria-hidden="true">→</span></button>
         <div class="msg" id="message" role="status" aria-live="polite"></div>
       </form>
-      <div class="privacy"><svg width="13" height="15" viewBox="0 0 16 18" fill="none" aria-hidden="true"><path d="M3 8V5a5 5 0 0 1 10 0v3M2 8h12v9H2z" stroke="currentColor" stroke-width="1.3"/><path d="M8 11v3" stroke="currentColor" stroke-width="1.3"/></svg><span>仅管理员账户可进入管理后台。 每次登录均需完成一次性验证码。</span></div>
+      <div class="privacy"><svg width="13" height="15" viewBox="0 0 16 18" fill="none" aria-hidden="true"><path d="M3 8V5a5 5 0 0 1 10 0v3M2 8h12v9H2z" stroke="currentColor" stroke-width="1.3"/><path d="M8 11v3" stroke="currentColor" stroke-width="1.3"/></svg><span>仅管理员账户可进入管理后台。公网管理需第二因素验证；动态码和密码均不会保存到浏览器缓存。</span></div>
     </section>
   </main>
   <footer class="page-foot"><span>教员</span><span>证据优先，理解历史。</span></footer>
+  <script src="/assets/security.js"></script>
+  <script src="/assets/credits.js"></script>
   <script>
     (()=>{
       const $=s=>document.querySelector(s);
       const admin=document.body.dataset.surface==='admin';
-      const state={mode:'login',math:null,busy:false,refreshing:false};
+      const state={mode:'login',math:null,busy:false,refreshing:false,claimId:null,loggedIn:false};
       const safeNext=(value,fallback)=>{try{if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return fallback;const target=new URL(value,location.origin);return target.origin===location.origin?target.pathname+target.search+target.hash:fallback}catch(_){return fallback}};
       const message=(text,kind='')=>{const el=$('#message');el.textContent=text;el.className='msg '+kind;};
       const actionText=()=>admin?'登录管理后台':state.mode==='register'?'创建账户':'登录工作台';
       const updateControls=()=>{$('#submit').disabled=state.busy||state.refreshing||!state.math;$('#submitText').textContent=state.busy?'正在提交…':actionText();$('#form').setAttribute('aria-busy',String(state.busy));$('#refresh').disabled=state.busy||state.refreshing;$('#refresh').textContent=state.refreshing?'正在加载…':'换一张';document.querySelectorAll('[data-mode]').forEach(el=>el.disabled=state.busy);};
-      const json=async(url,opt={})=>{const r=await fetch(url,{credentials:'same-origin',...opt});let x={};try{x=await r.json()}catch(_){throw new Error('服务返回异常，请稍后重试。')}if(!r.ok||x.ok===false)throw new Error(x.error||('请求失败（'+r.status+'）'));return x;};
+      const json=(url,opt={})=>window.JiaoyuanSecurity.request(url,opt);
       async function refresh(){if(state.refreshing)return;state.refreshing=true;state.math=null;updateControls();try{const math=await json('/api/auth/captcha',{method:'POST'});state.math=math;$('#math').src=math.image;$('#mathAnswer').value='';return true;}catch(e){message(e.message+' 点击“换一张”重试。','error');return false;}finally{state.refreshing=false;updateControls();}}
       function setMode(mode){if(state.busy||admin)return;state.mode=mode;document.querySelectorAll('[data-mode]').forEach(el=>{const selected=el.dataset.mode===mode;el.setAttribute('aria-selected',String(selected));el.tabIndex=selected?0:-1;});$('#heading').textContent=mode==='register'?'创建账户':'登录工作台';$('#lead').textContent=mode==='register'?'创建本地账户，从你正在面对的事情聊起。':'继续刚才的思考，保存每一段对话。';$('#password').autocomplete=mode==='register'?'new-password':'current-password';$('#usernameHint').hidden=mode!=='register';$('#passwordHint').hidden=mode!=='register';message('');updateControls();}
       document.querySelectorAll('[data-mode]').forEach(el=>{el.onclick=()=>setMode(el.dataset.mode);el.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||state.busy)return;e.preventDefault();const mode=e.key==='Home'?'login':e.key==='End'?'register':state.mode==='login'?'register':'login';setMode(mode);$('#'+(mode==='login'?'loginTab':'registerTab')).focus();};});
       $('#reveal').onclick=()=>{const field=$('#password');const reveal=field.type==='password';field.type=reveal?'text':'password';$('#reveal').textContent=reveal?'隐藏':'显示';$('#reveal').setAttribute('aria-pressed',String(reveal));};
       $('#refresh').onclick=()=>{if(!state.busy)refresh();};
-      $('#form').onsubmit=async e=>{e.preventDefault();if(state.busy||state.refreshing)return;if(!$('#form').reportValidity())return;if(!state.math){message('请先加载验证码。','error');return;}state.busy=true;updateControls();message('正在验证，请稍候。');try{const mode=state.mode;const endpoint=admin?'/api/admin/login':'/api/auth/'+mode;await json(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('#username').value.trim(),password:$('#password').value,math_challenge_id:state.math.challenge_id,math_answer:$('#mathAnswer').value})});if(!admin&&mode==='register'){state.busy=false;setMode('login');message('账户已创建。输入新验证码后即可登录。','ok');await refresh();$('#mathAnswer').focus();return;}message('登录成功，正在进入…','ok');const next=new URLSearchParams(location.search).get('next');location.href=safeNext(next,admin?'/admin':'/app');}catch(e){message(e.message,'error');await refresh();$('#mathAnswer').focus();}finally{state.busy=false;updateControls();}};
-      updateControls();refresh();
+      async function continueToApp(){
+        if(!admin&&$('#claimGuest').checked){
+          state.claimId ||= window.JiaoyuanSecurity.requestId();
+          try{
+            message('已登录，正在承接当前访客记录…');
+            await json('/api/account/guest-claim',{method:'POST',body:JSON.stringify({claim_id:state.claimId,include_conversations:true,include_wallet:true})});
+            const handoff=window.JiaoyuanCredits.handoff();
+            if(handoff){handoff.claimed=true;sessionStorage.setItem(window.JiaoyuanCredits.HANDOFF_KEY,JSON.stringify(handoff));if(/^mao-archive-guest--[0-9]+-$/.test(handoff.guest_prefix||''))await window.JiaoyuanCredits.clearCache(handoff.guest_prefix);}
+          }catch(error){message('账户已登录，但访客记录尚未归入：'+error.message+'。可以重试，或取消归入后继续。','error');$('#retryClaim').hidden=false;return;}
+        }
+        message('登录成功，正在进入…','ok');const next=new URLSearchParams(location.search).get('next');location.href=safeNext(next,admin?'/admin':'/app');
+      }
+      if(!admin){
+        $('#retryClaim').onclick=async()=>{if(state.busy)return;state.busy=true;updateControls();try{await continueToApp();}finally{state.busy=false;updateControls();}};
+        $('#claimGuest').onchange=()=>{if(state.loggedIn&&!$('#claimGuest').checked)continueToApp();};
+        if(location.protocol!=='file:')json('/api/guest/bootstrap',{method:'POST',body:'{}'}).then(result=>{const wallet=result.wallet||{},count=result.topic_count??result.actor?.topic_count;$('#claimPreview').textContent=(Number.isInteger(count)?'当前访客有'+count+'个议题；':'当前访客记录与可承接余额将归入本账户。')+(wallet.available!==undefined?'可用'+window.JiaoyuanCredits.pointLabel(wallet.available)+'积分，冻结'+window.JiaoyuanCredits.pointLabel(wallet.held||0)+'积分。':'')+'可取消归入，登录不会自动发送草稿。';}).catch(()=>{});
+      }
+      $('#form').onsubmit=async e=>{e.preventDefault();if(state.busy||state.refreshing)return;if(state.loggedIn){await continueToApp();return;}if(!$('#form').reportValidity())return;if(!state.math){message('请先加载验证码。','error');return;}state.busy=true;updateControls();message('正在验证，请稍候。');try{const mode=state.mode;const endpoint=admin?'/api/admin/login':'/api/auth/'+mode;const result=await json(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('#username').value.trim(),password:$('#password').value,math_challenge_id:state.math.challenge_id,math_answer:$('#mathAnswer').value,operation_id:window.JiaoyuanSecurity.requestId(),...(admin?{otp_code:$('#otpCode').value.trim()}:{})})});if(!admin&&mode==='register'&&!result.authenticated){state.busy=false;setMode('login');message('账户已创建。输入新验证码后即可登录并继续原话题。','ok');await refresh();$('#mathAnswer').focus();return;}state.loggedIn=true;await continueToApp();}catch(e){message(e.message,'error');await refresh();$('#mathAnswer').focus();}finally{state.busy=false;updateControls();}};
+
+      if(location.protocol==='file:'||!window.JiaoyuanSecurity){message('请从本地服务打开此页，直接打开HTML无法连接账户。','error');return;}updateControls();refresh();
     })();
   </script>
 </body>

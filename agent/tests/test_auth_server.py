@@ -12,21 +12,24 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agent.auth_server import make_server
+from tests.http_credits import CreditsHTTPAdapter, FIXTURE_ENV, seed_credits
 
 
 class AuthHTTPTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="mao-auth-http-")
         db = Path(self.tmp.name) / 'auth.db'
-        environment = patch.dict(os.environ, {'MAO_AGENT_DB': str(db), 'MAO_ADMIN_SECRET_FILE': str(db) + '.provider-secrets'})
+        environment = patch.dict(os.environ, {**FIXTURE_ENV,'MAO_AGENT_DB': str(db), 'MAO_ADMIN_SECRET_FILE': str(db) + '.provider-secrets'})
         environment.start(); self.addCleanup(environment.stop)
         for name, value in (('_keychain_get', ''), ('_keychain_set', False), ('_keychain_delete', None)):
             isolated = patch('agent.admin_config.AdminConfigStore.' + name, return_value=value)
             isolated.start(); self.addCleanup(isolated.stop)
-        self.server = make_server("127.0.0.1", 0, Path(self.tmp.name) / "auth.db")
+        self.server = make_server("127.0.0.1", 0, Path(self.tmp.name) / "auth.db", security_test_mode=True)
+        seed_credits(self.server)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.base = "http://127.0.0.1:%d" % self.server.server_address[1]
+        self.http = CreditsHTTPAdapter(self.server,self.base)
 
     def tearDown(self):
         self.server.shutdown()
@@ -35,13 +38,7 @@ class AuthHTTPTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def request(self, path, method="GET", data=None, headers=None):
-        body = None if data is None else (data if isinstance(data, bytes) else json.dumps(data).encode())
-        req = Request(self.base + path, data=body, method=method, headers=headers or {})
-        try:
-            with urlopen(req, timeout=3) as response:
-                return response.status, dict(response.headers), response.read()
-        except HTTPError as exc:
-            return exc.code, dict(exc.headers), exc.read()
+        return self.http.request(path,method,data,headers)
 
     def json_request(self, path, method="POST", data=None, headers=None):
         status, response_headers, body = self.request(path, method, data, {"Content-Type": "application/json", **(headers or {})})
@@ -180,6 +177,7 @@ class AuthHTTPTests(unittest.TestCase):
 
         self.server.auth_service.validate_session = lambda token: {"ok": True, "user": {"user_id": 7, "username": "tester"}}
         fake = FakeAgent()
+        fake.config = self.server.agent.config
         self.server.agent = fake
         status, headers, body = self.request("/api/agent/stream", method="POST", data={"question": "原文是什么？", "mode": "research", "thread_id": "demo"}, headers={"Content-Type": "application/json"})
         self.assertEqual(status, 200)

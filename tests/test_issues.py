@@ -20,6 +20,7 @@ from agent.firecrawl import FirecrawlConfig
 from agent.issues import IssueError, IssueStore, public_metadata
 from agent.llm import LLMConfig
 from agent.runtime import Agent, AgentConfig
+from tests.http_credits import CreditsHTTPAdapter, FIXTURE_ENV, seed_credits
 
 
 def analysis(goal='保住现有客户', **extra):
@@ -271,14 +272,16 @@ class IssueHTTPTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='issue-http-')
         self.addCleanup(self.temp.cleanup)
         self.db = Path(self.temp.name)/'agent.db'
-        env = patch.dict(os.environ, {'MAO_AGENT_DB':str(self.db),'MAO_ADMIN_SECRET_FILE':str(self.db)+'.provider-secrets'})
+        env = patch.dict(os.environ, {**FIXTURE_ENV,'MAO_AGENT_DB':str(self.db),'MAO_ADMIN_SECRET_FILE':str(self.db)+'.provider-secrets'})
         env.start();self.addCleanup(env.stop)
         for name,value in (('_keychain_get',''),('_keychain_set',False),('_keychain_delete',None)):
             item=patch.object(AdminConfigStore,name,return_value=value);item.start();self.addCleanup(item.stop)
-        self.server=make_server('127.0.0.1',0,self.db)
+        self.server=make_server('127.0.0.1',0,self.db,security_test_mode=True)
+        seed_credits(self.server)
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
         self.addCleanup(self.stop)
         self.base='http://127.0.0.1:%d'%self.server.server_address[1]
+        self.http=CreditsHTTPAdapter(self.server,self.base)
         self.server.auth_service.validate_session=lambda token: {'ok':True,'user':{'user_id':1 if token=='one' else 2,'username':'reader'}} if token in {'one','two'} else {'ok':False}
 
     def stop(self):
@@ -288,13 +291,8 @@ class IssueHTTPTests(unittest.TestCase):
         headers={'Content-Type':'application/json'}
         if user:headers['Cookie']='mao_session='+user
         if origin:headers['Origin']=origin
-        request=Request(self.base+path,data=json.dumps(data).encode() if data is not None else None,
-                        method=method or ('POST' if data is not None else 'GET'),headers=headers)
-        try:
-            with urlopen(request,timeout=5) as r:
-                if response_hook: response_hook(dict(r.headers))
-                return r.status,dict(r.headers),r.read().decode()
-        except HTTPError as e:return e.code,dict(e.headers),e.read().decode()
+        status,response_headers,body=self.http.request(path,method or ('POST' if data is not None else 'GET'),data,headers,response_hook)
+        return status,response_headers,body.decode()
 
     def stream(self,question='请帮我梳理',tid='issue',response_hook=None,**extra):
         return self.req('/api/agent/stream',{'question':question,'thread_id':tid,**extra},response_hook=response_hook)

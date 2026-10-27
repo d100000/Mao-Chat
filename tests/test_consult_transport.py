@@ -18,6 +18,7 @@ from agent.admin_config import AdminConfigStore
 from agent.auth_server import _bounded_history, _consult_prompt_history, make_server, MAX_HISTORY_CHARS
 from agent.dialogue import understanding
 from agent import runtime_cli
+from tests.http_credits import CreditsHTTPAdapter, FIXTURE_ENV, seed_credits
 
 
 class ConsultTransportTests(unittest.TestCase):
@@ -25,16 +26,18 @@ class ConsultTransportTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='consult-http-')
         self.addCleanup(self.temp.cleanup)
         db = Path(self.temp.name) / 'agent.db'
-        environment = patch.dict(os.environ, {'MAO_AGENT_DB': str(db), 'MAO_ADMIN_SECRET_FILE': str(db) + '.provider-secrets'})
+        environment = patch.dict(os.environ, {**FIXTURE_ENV,'MAO_AGENT_DB': str(db), 'MAO_ADMIN_SECRET_FILE': str(db) + '.provider-secrets'})
         environment.start(); self.addCleanup(environment.stop)
         for name, value in (('_keychain_get', ''), ('_keychain_set', False), ('_keychain_delete', None)):
             safe = patch.object(AdminConfigStore, name, return_value=value)
             safe.start(); self.addCleanup(safe.stop)
-        self.server = make_server('127.0.0.1', 0, db)
+        self.server = make_server('127.0.0.1', 0, db, security_test_mode=True)
+        seed_credits(self.server)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.addCleanup(self.stop_server)
         self.base = 'http://127.0.0.1:%d' % self.server.server_address[1]
+        self.http = CreditsHTTPAdapter(self.server,self.base)
 
     def stop_server(self):
         self.server.shutdown(); self.server.server_close(); self.thread.join(timeout=3)
@@ -42,12 +45,8 @@ class ConsultTransportTests(unittest.TestCase):
     def request(self, path, data=None, cookie=None):
         headers = {'Content-Type': 'application/json'}
         if cookie: headers['Cookie'] = cookie
-        request = Request(self.base + path, data=json.dumps(data).encode() if data is not None else None, headers=headers)
-        try:
-            with urlopen(request, timeout=3) as response:
-                return response.status, dict(response.headers), response.read().decode()
-        except HTTPError as error:
-            return error.code, dict(error.headers), error.read().decode()
+        status,response_headers,body = self.http.request(path,'POST' if data is not None else 'GET',data,headers)
+        return status,response_headers,body.decode()
 
     def captcha(self):
         challenge = self.server.auth_service.create_math_challenge()
